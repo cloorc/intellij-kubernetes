@@ -10,19 +10,23 @@
  ******************************************************************************/
 package com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes
 
-import com.redhat.devtools.intellij.kubernetes.model.Clients
-import com.redhat.devtools.intellij.kubernetes.model.resource.ILogWatcher
+import com.redhat.devtools.intellij.kubernetes.model.client.ClientAdapter
+import com.redhat.devtools.intellij.kubernetes.model.resource.IWatchableExec
+import com.redhat.devtools.intellij.kubernetes.model.resource.IWatchableLog
 import com.redhat.devtools.intellij.kubernetes.model.resource.NamespacedOperation
 import com.redhat.devtools.intellij.kubernetes.model.resource.NamespacedResourceOperator
 import com.redhat.devtools.intellij.kubernetes.model.resource.ResourceKind
+import io.fabric8.kubernetes.api.model.Container
 import io.fabric8.kubernetes.api.model.batch.v1.Job
 import io.fabric8.kubernetes.client.BatchAPIGroupClient
 import io.fabric8.kubernetes.client.KubernetesClient
+import io.fabric8.kubernetes.client.dsl.ExecListener
+import io.fabric8.kubernetes.client.dsl.ExecWatch
 import io.fabric8.kubernetes.client.dsl.LogWatch
 import java.io.OutputStream
 
-class JobsOperator(clients: Clients<out KubernetesClient>)
-    : NamespacedResourceOperator<Job, BatchAPIGroupClient>(clients.getBatch()), ILogWatcher<Job> {
+class JobsOperator(client: ClientAdapter<out KubernetesClient>)
+    : NamespacedResourceOperator<Job, BatchAPIGroupClient>(client.getBatch()), IWatchableLog<Job>, IWatchableExec<Job> {
 
     companion object {
         val KIND = ResourceKind.create(Job::class.java)
@@ -34,7 +38,12 @@ class JobsOperator(clients: Clients<out KubernetesClient>)
         return client.v1().jobs()
     }
 
-    override fun watchLog(resource: Job, out: OutputStream): LogWatch? {
-        return watchLogWhenReady(resource, out)
+    override fun watchLog(container: Container, resource: Job, out: OutputStream): LogWatch? {
+        return super.watchLog(container, resource, out)
     }
+
+    override fun watchExec(container: Container, resource: Job, listener: ExecListener): ExecWatch? {
+        return super.watchExec(container, resource, listener)
+    }
+
 }

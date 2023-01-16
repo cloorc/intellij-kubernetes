@@ -10,21 +10,24 @@
  ******************************************************************************/
 package com.redhat.devtools.intellij.kubernetes.tree
 
+import com.intellij.ide.util.treeView.AbstractTreeStructure
 import com.intellij.ide.util.treeView.NodeRenderer
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.ScrollPaneFactory
+import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.tree.AsyncTreeModel
+import com.intellij.ui.tree.StructureTreeModel
 import com.intellij.ui.treeStructure.Tree
+import com.intellij.util.concurrency.Invoker
 import com.redhat.devtools.intellij.common.compat.PopupHandlerAdapter
-import com.redhat.devtools.intellij.common.tree.StructureTreeModelFactory
-import com.redhat.devtools.intellij.kubernetes.actions.addDoubleClickListener
 import com.redhat.devtools.intellij.kubernetes.actions.getElement
 import com.redhat.devtools.intellij.kubernetes.editor.ResourceEditorFactory
-import com.redhat.devtools.intellij.kubernetes.model.ResourceModel
+import com.redhat.devtools.intellij.kubernetes.model.IResourceModel
+import com.redhat.devtools.intellij.kubernetes.tree.util.addDoubleClickListener
 import io.fabric8.kubernetes.api.model.HasMetadata
 import java.awt.Point
 import java.awt.event.MouseAdapter
@@ -41,18 +44,26 @@ class ResourceTreeToolWindowFactory: ToolWindowFactory {
     }
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
-        val tree = createTree(project)
-        val panel = ScrollPaneFactory.createScrollPane(tree)
-        PopupHandlerAdapter.install(tree, "com.redhat.devtools.intellij.kubernetes.tree", ActionPlaces.UNKNOWN)
+        val panel = ScrollPaneFactory.createScrollPane()
         val contentFactory = ContentFactory.SERVICE.getInstance()
-        toolWindow.contentManager.addContent(contentFactory.createContent(panel, "", false))
+        val content = contentFactory.createContent(panel, "", false)
+        toolWindow.contentManager.addContent(content)
+
+        val tree = createTree(content, project)
+        PopupHandlerAdapter.install(tree, "com.redhat.devtools.intellij.kubernetes.tree", ActionPlaces.UNKNOWN)
+        panel.setViewportView(tree)
     }
 
-    private fun createTree(project: Project): Tree {
-        val resourceModel = ResourceModel.getInstance()
+    private fun createTree(content: Content, project: Project): Tree {
+        val resourceModel = IResourceModel.getInstance()
         val structure = TreeStructure(project, resourceModel)
-        val treeModel = StructureTreeModelFactory.create(structure, project)
-        val tree = Tree(AsyncTreeModel(treeModel, project))
+        val treeModel = StructureTreeModel<AbstractTreeStructure>(
+            structure,
+            null,
+            Invoker.forBackgroundPoolWithoutReadAction(project),
+            project
+        )
+        val tree = Tree(AsyncTreeModel(treeModel, content))
         tree.isRootVisible = false
         tree.cellRenderer = NodeRenderer()
         tree.addDoubleClickListener(openResourceEditor(project))

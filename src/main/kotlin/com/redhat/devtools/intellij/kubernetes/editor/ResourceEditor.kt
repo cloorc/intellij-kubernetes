@@ -11,6 +11,7 @@
 package com.redhat.devtools.intellij.kubernetes.editor
 
 import com.intellij.json.JsonFileType
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionToolbar
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
@@ -20,6 +21,7 @@ import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
@@ -33,7 +35,7 @@ import com.redhat.devtools.intellij.kubernetes.editor.notification.PushNotificat
 import com.redhat.devtools.intellij.kubernetes.editor.util.getDocument
 import com.redhat.devtools.intellij.kubernetes.editor.util.isKubernetesResource
 import com.redhat.devtools.intellij.kubernetes.model.IResourceModel
-import com.redhat.devtools.intellij.kubernetes.model.ModelChangeObservable.IResourceChangeListener
+import com.redhat.devtools.intellij.kubernetes.model.IResourceModelListener
 import com.redhat.devtools.intellij.kubernetes.model.context.IActiveContext
 import com.redhat.devtools.intellij.kubernetes.model.util.ResettableLazyProperty
 import com.redhat.devtools.intellij.kubernetes.model.util.runWithoutServerSetProperties
@@ -87,9 +89,10 @@ open class ResourceEditor(
     private val resourceVersion: PersistentEditorValue = PersistentEditorValue(editor),
     // for mocking purposes
     private val diff: ResourceDiff = ResourceDiff(project)
-): IResourceChangeListener {
+): IResourceModelListener, Disposable {
 
     init {
+        Disposer.register(editor, this)
         resourceModel.addListener(this)
     }
 
@@ -416,8 +419,8 @@ open class ResourceEditor(
         return clusterResource
     }
 
-    private fun onResourceChanged(): IResourceChangeListener {
-        return object : IResourceChangeListener {
+    private fun onResourceChanged(): IResourceModelListener {
+        return object : IResourceModelListener {
             override fun added(added: Any) {
                 // ignore
             }
@@ -474,13 +477,15 @@ open class ResourceEditor(
             // active context changed, recreate cluster resource
             recreateClusterResource()
             resourceVersion.set(null)
+            update()
         }
     }
 
-    override fun currentNamespace(namespace: String?) {
+    override fun currentNamespaceChanged(new: IActiveContext<*,*>?, old: IActiveContext<*,*>?) {
         // current namespace in same context has changed, recreate cluster resource
         recreateClusterResource()
         resourceVersion.set(null)
+        update()
     }
 
     private fun saveResourceVersion(resource: HasMetadata?) {
@@ -490,16 +495,14 @@ open class ResourceEditor(
 
     /**
      * Closes the current [clusterResource] so that a new one is created when it is accessed (ex. in [update]).
-     * Then [update] is called to update the notifications to be shown in the editor.
      *
      * @see clusterResource
-     * @see update
      */
     private fun recreateClusterResource() {
         resourceChangeMutex.withLock {
             clusterResource?.close()
+            clusterResource// accessing causes re-creation
         }
-        update()
     }
 
     /** for testing purposes */
@@ -524,5 +527,9 @@ open class ResourceEditor(
         } else {
             ApplicationManager.getApplication().invokeLater(runnable)
         }
+    }
+
+    override fun dispose() {
+        resourceModel.removeListener(this)
     }
 }

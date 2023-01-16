@@ -13,16 +13,12 @@ package com.redhat.devtools.intellij.kubernetes.editor.notification
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.MessageType
-import com.intellij.openapi.ui.popup.Balloon
-import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.Key
 import com.intellij.ui.EditorNotificationPanel
-import com.intellij.ui.awt.RelativePoint
+import com.redhat.devtools.intellij.kubernetes.balloon.ErrorBalloon
 import com.redhat.devtools.intellij.kubernetes.editor.hideNotification
 import com.redhat.devtools.intellij.kubernetes.editor.showNotification
-import java.awt.Point
 import javax.swing.JComponent
 
 /**
@@ -49,38 +45,19 @@ class ErrorNotification(private val editor: FileEditor, private val project: Pro
     private fun createPanel(editor: FileEditor, title: String, message: String?): EditorNotificationPanel {
         val panel = EditorNotificationPanel()
         panel.icon(AllIcons.Ide.FatalError)
-        panel.setText(title)
+        panel.text = title
         addDetailsAction(message, panel, editor)
         return panel
     }
 
     private fun addDetailsAction(message: String?, panel: EditorNotificationPanel, editor: FileEditor) {
-        if (message == null
-            || message.isBlank()) {
+        if (message.isNullOrBlank()) {
             return
         }
         panel.createActionLabel("Details") {
-            val balloonBuilder = JBPopupFactory.getInstance()
-                .createHtmlTextBalloonBuilder(
-                    """<html>
-                        <body>
-                            <div>
-                               ${message.replace("\n", "<br>")}
-                            </div>
-                        </body>
-                       </html>""".trimMargin(),
-                    MessageType.ERROR,
-                    null)
-            val balloon = balloonBuilder
-                .setDialogMode(true)
-                .createBalloon()
-            showBelow(balloon, panel)
+            val balloon = ErrorBalloon.create(message, panel)
+            ErrorBalloon.showBelow(balloon, panel)
             Disposer.register(editor, balloon)
         }
-    }
-
-    private fun showBelow(balloon: Balloon, panel: EditorNotificationPanel) {
-        val below = RelativePoint(panel, Point(panel.bounds.width / 2, panel.bounds.height))
-        balloon.show(below, Balloon.Position.below)
     }
 }

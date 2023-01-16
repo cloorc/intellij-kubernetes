@@ -8,15 +8,16 @@
  * Contributors:
  * Red Hat, Inc. - initial API and implementation
  ******************************************************************************/
-package com.redhat.devtools.intellij.kubernetes.logs
+package com.redhat.devtools.intellij.kubernetes.console
 
+import com.intellij.execution.ui.ConsoleView
 import com.intellij.execution.ui.ConsoleViewContentType
-import com.intellij.terminal.TerminalExecutionConsole
+import com.intellij.openapi.diagnostic.logger
 import java.io.OutputStream
 import java.util.Queue
 import java.util.concurrent.LinkedBlockingQueue
 
-class TerminalOutputStream(private val terminal: TerminalExecutionConsole) : OutputStream() {
+open class ConsoleOutputStream(private val terminal: ConsoleView) : OutputStream() {
 
     companion object {
         const val BUFFER_SIZE: Int = 256
@@ -25,7 +26,9 @@ class TerminalOutputStream(private val terminal: TerminalExecutionConsole) : Out
     private val buffer = LinkedBlockingQueue<Int>(BUFFER_SIZE)
 
     override fun write(char: Int) {
-        if ('\n' == char.toChar()
+        if (!Character.isValidCodePoint(char)) {
+            return
+        } else if ('\n' == char.toChar()
             && buffer.remainingCapacity() > 0
         ) {
             // newline
@@ -44,7 +47,24 @@ class TerminalOutputStream(private val terminal: TerminalExecutionConsole) : Out
         val builder = buffer.stream()
             .collect(::StringBuilder, this::appendCodePoint, StringBuilder::append)
         buffer.clear()
-        terminal.print(builder.toString(), ConsoleViewContentType.SYSTEM_OUTPUT)
+        flushToTerminal(processOutput(builder.toString()))
+    }
+
+    protected open fun processOutput(output: String): String {
+        return output
+    }
+
+    private fun flushToTerminal(output: String) {
+        terminal.print(output, ConsoleViewContentType.SYSTEM_OUTPUT)
+    }
+
+    private fun appendCodePoint(builder: java.lang.StringBuilder, codePoint: Int): java.lang.StringBuilder {
+        try {
+            builder.appendCodePoint(codePoint)
+        } catch (e: Throwable) {
+            logger<ConsoleOutputStream>().warn("Error appending code point $codePoint to buffer.", e)
+        }
+        return builder
     }
 
     private fun appendCodePoint(builder: java.lang.StringBuilder, codePoint: Int): java.lang.StringBuilder {

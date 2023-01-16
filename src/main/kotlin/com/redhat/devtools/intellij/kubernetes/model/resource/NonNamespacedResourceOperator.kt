@@ -15,11 +15,14 @@ import com.redhat.devtools.intellij.kubernetes.model.util.isSameNamespace
 import com.redhat.devtools.intellij.kubernetes.model.util.removeResourceVersion
 import com.redhat.devtools.intellij.kubernetes.model.util.removeUid
 import com.redhat.devtools.intellij.kubernetes.model.util.runWithoutServerSetProperties
+import io.fabric8.kubernetes.api.model.Container
 import io.fabric8.kubernetes.api.model.HasMetadata
 import io.fabric8.kubernetes.api.model.KubernetesResourceList
 import io.fabric8.kubernetes.client.Client
 import io.fabric8.kubernetes.client.Watch
 import io.fabric8.kubernetes.client.Watcher
+import io.fabric8.kubernetes.client.dsl.ExecListener
+import io.fabric8.kubernetes.client.dsl.ExecWatch
 import io.fabric8.kubernetes.client.dsl.LogWatch
 import io.fabric8.kubernetes.client.dsl.NonNamespaceOperation
 import io.fabric8.kubernetes.client.dsl.Resource
@@ -45,25 +48,46 @@ abstract class NonNamespacedResourceOperator<R : HasMetadata, C : Client>(
 
     protected open fun loadAllResources(): List<R> {
         logger<NamespacedResourceOperator<*, *>>().debug("Loading all $kind resources.")
-        return getOperation()?.list()?.items ?: emptyList()
+        return getOperation()
+            ?.list()?.items
+            ?: emptyList()
     }
 
     override fun watchAll(watcher: Watcher<in R>): Watch? {
         @Suppress("UNCHECKED_CAST")
         val typedWatcher = watcher as? Watcher<R> ?: return null
-        return getOperation()?.watch(typedWatcher)
+        return getOperation()
+            ?.watch(typedWatcher)
     }
 
     override fun watch(resource: HasMetadata, watcher: Watcher<in R>): Watch? {
         @Suppress("UNCHECKED_CAST")
         val typedWatcher = watcher as? Watcher<R> ?: return null
-        return getOperation()?.withName(resource.metadata.name)?.watch(typedWatcher)
+        return getOperation()
+            ?.withName(resource.metadata.name)
+            ?.watch(typedWatcher)
+    }
+
+    open fun watchLog(container: Container, resource: R, out: OutputStream): LogWatch? {
+        val operation = getOperation()
+            ?.withName(resource.metadata.name)
+            ?: return null
+        return watchLog(container, out, operation)
+    }
+
+    open fun watchExec(container: Container, resource: R, listener: ExecListener): ExecWatch? {
+        val operation = getOperation()
+            ?.withName(resource.metadata.name)
+            ?: return null
+        return watchExec(container, listener, operation)
     }
 
     override fun delete(resources: List<HasMetadata>): Boolean {
         @Suppress("UNCHECKED_CAST")
         val toDelete = resources as? List<R> ?: return false
-        return getOperation()?.delete(toDelete) ?: false
+        return getOperation()
+            ?.delete(toDelete)
+            ?: false
     }
 
     override fun replace(resource: HasMetadata): HasMetadata? {
@@ -71,7 +95,9 @@ abstract class NonNamespacedResourceOperator<R : HasMetadata, C : Client>(
         val toReplace = resource as? R ?: return null
         val resourceVersion = removeResourceVersion(toReplace)
         val uid = removeUid(toReplace)
-        val replaced = getOperation()?.withName(toReplace.metadata.name)?.replace(toReplace)
+        val replaced = getOperation()
+            ?.withName(toReplace.metadata.name)
+            ?.replace(toReplace)
         // restore properties that were removed before sending
         toReplace.metadata.resourceVersion = resourceVersion
         toReplace.metadata.uid = uid
@@ -92,7 +118,9 @@ abstract class NonNamespacedResourceOperator<R : HasMetadata, C : Client>(
     override fun get(resource: HasMetadata): HasMetadata? {
         @Suppress("UNCHECKED_CAST")
         val toGet = resource as? R ?: return null
-        return getOperation()?.withName(toGet.metadata.name)?.get()
+        return getOperation()
+            ?.withName(toGet.metadata.name)
+            ?.get()
     }
 
     protected open fun getOperation(): NonNamespacedOperation<R>? {
@@ -114,17 +142,11 @@ abstract class NonNamespacedResourceOperator<R : HasMetadata, C : Client>(
     protected fun ensureSameNamespace(spec: HasMetadata?, resource: HasMetadata?): HasMetadata? {
         return when {
             spec == null -> resource // no spec
-            resource == null -> resource // null resource
+            resource == null -> null // null resource
             spec.metadata.namespace == null -> resource // namespace not specified
             spec.isSameNamespace(resource) -> resource // same namespace
             else -> null
         }
     }
 
-    protected fun watchLogWhenReady(resource: R, out: OutputStream): LogWatch? {
-        val op = getOperation()
-            ?.withName(resource.metadata.name)
-            ?: return null
-        return super.watchLogWhenReady(op, out)
-    }
 }

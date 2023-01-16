@@ -18,6 +18,7 @@ import com.redhat.devtools.intellij.kubernetes.model.util.getApiVersion
 import com.redhat.devtools.intellij.kubernetes.model.util.getHighestPriorityVersion
 import io.fabric8.kubernetes.api.Pluralize
 import io.fabric8.kubernetes.api.model.APIResource
+import io.fabric8.kubernetes.api.model.Container
 import io.fabric8.kubernetes.api.model.Context
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource
 import io.fabric8.kubernetes.api.model.GenericKubernetesResourceList
@@ -28,21 +29,34 @@ import io.fabric8.kubernetes.api.model.NamespaceList
 import io.fabric8.kubernetes.api.model.ObjectMeta
 import io.fabric8.kubernetes.api.model.Pod
 import io.fabric8.kubernetes.api.model.PodList
+import io.fabric8.kubernetes.api.model.PodSpec
+import io.fabric8.kubernetes.api.model.PodTemplateSpec
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinition
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinitionList
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinitionNames
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinitionSpec
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinitionVersion
+import io.fabric8.kubernetes.api.model.batch.v1.Job
+import io.fabric8.kubernetes.api.model.batch.v1.JobSpec
 import io.fabric8.kubernetes.client.Config
 import io.fabric8.kubernetes.client.KubernetesClient
+import io.fabric8.kubernetes.client.NamespacedKubernetesClient
 import io.fabric8.kubernetes.client.V1ApiextensionAPIGroupDSL
 import io.fabric8.kubernetes.client.Watch
 import io.fabric8.kubernetes.client.Watcher
 import io.fabric8.kubernetes.client.dsl.ApiextensionsAPIGroupDSL
+import io.fabric8.kubernetes.client.dsl.ContainerResource
+import io.fabric8.kubernetes.client.dsl.Containerable
+import io.fabric8.kubernetes.client.dsl.ExecWatch
+import io.fabric8.kubernetes.client.dsl.LogWatch
 import io.fabric8.kubernetes.client.dsl.MixedOperation
 import io.fabric8.kubernetes.client.dsl.NonNamespaceOperation
 import io.fabric8.kubernetes.client.dsl.PodResource
 import io.fabric8.kubernetes.client.dsl.Resource
+import java.io.InputStream
+import java.io.OutputStream
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
 import java.net.URL
 
 
@@ -65,7 +79,7 @@ object ClientMocks {
         namespaces: Array<Namespace>,
         masterUrl: URL = URL("http://localhost"),
         customResourceDefinitions: List<CustomResourceDefinition> = emptyList()
-    ): KubernetesClient {
+    ): NamespacedKubernetesClient {
         val namespacesMock = namespaceListOperation(namespaces)
         val config = mock<Config> {
             on { namespace } doReturn currentNamespace
@@ -82,12 +96,13 @@ object ClientMocks {
     }
 
     private fun namespaceListOperation(namespaces: Array<Namespace>): NamespaceListOperation {
-        val namespaceList = mock<NamespaceList> {
-            on { items } doReturn namespaces.asList()
-        }
-        return mock {
-            on { list() } doReturn namespaceList
-        }
+        val namespaceList: NamespaceList = mock()
+        doReturn(namespaces.asList())
+            .whenever(namespaceList).items
+        val namespaceListOperation: NamespaceListOperation = mock()
+        doReturn(namespaceList)
+            .whenever(namespaceListOperation).list()
+        return namespaceListOperation
     }
 
     private fun apiextensionsOperation(definitions: List<CustomResourceDefinition>): ApiextensionsAPIGroupDSL {
@@ -137,22 +152,38 @@ object ClientMocks {
         return podList
     }
 
-    fun items(podList: PodList, vararg pods: Pod ) {
+    fun items(podList: PodList, vararg pods: Pod) {
         val returnedPods = listOf(*pods)
         whenever(podList.items)
             .doReturn(returnedPods)
     }
 
-    fun withName(op: NonNamespaceOperation<Pod, PodList, PodResource<Pod>>, pod: Pod) {
+    fun withName(op: NonNamespaceOperation<Pod, PodList, PodResource<Pod>>, pod: Pod): PodResource<Pod> {
         val podResource = mock<PodResource<Pod>>()
         whenever(podResource.get())
             .doReturn(pod)
         whenever(op.withName(pod.metadata.name))
             .doReturn(podResource)
+        return podResource
+    }
+
+    fun inContainer(
+        op: Containerable<String, ContainerResource<LogWatch, InputStream, PipedOutputStream, OutputStream, PipedInputStream, String, ExecWatch, Boolean, InputStream, Boolean>>,
+        container: Container
+    ) {
+        val containerResource: ContainerResource<LogWatch, InputStream, PipedOutputStream, OutputStream, PipedInputStream, String, ExecWatch, Boolean, InputStream, Boolean> =
+            mock()
+        val name = container.name
+        doReturn(containerResource)
+            .whenever(op).inContainer(name)
+    }
+
+    inline fun <reified R: Resource<*>> containerableResource(): R {
+        return mock(arrayOf(Containerable::class))
     }
 
     fun namedContext(name: String, namespace: String, cluster: String, user: String): NamedContext {
-        val context: Context = kubeConfigContext(namespace, cluster, user)
+        val context: Context = context(namespace, cluster, user)
         return namedContext(name, context)
     }
 
@@ -163,7 +194,7 @@ object ClientMocks {
         }
     }
 
-    fun kubeConfigContext(namespace: String, cluster: String, user: String): Context {
+    private fun context(namespace: String, cluster: String, user: String): Context {
         return mock {
             on { this.namespace } doReturn namespace
             on { this.cluster } doReturn cluster
@@ -171,14 +202,22 @@ object ClientMocks {
         }
     }
 
-    fun config(currentContext: NamedContext?, contexts: List<NamedContext>): Config {
+    fun config(
+        currentContext: NamedContext?,
+        contexts: List<NamedContext>,
+        masterUrl: String = "https://localhost",
+        apiVersion: String = "v1"
+    ): Config {
         return mock {
-            on { mock.currentContext } doReturn currentContext
-            on { mock.contexts } doReturn contexts
+            on { this.currentContext } doReturn currentContext
+            on { this.contexts } doReturn contexts
+            on { this.masterUrl } doReturn masterUrl
+            on { this.apiVersion } doReturn apiVersion
+            on { this.requestConfig } doReturn mock()
         }
     }
 
-    fun changeConfig(currentContext: NamedContext?, contexts: List<NamedContext>, config: Config) {
+    fun doReturnCurrentContextAndAllContexts(currentContext: NamedContext?, contexts: List<NamedContext>, config: Config) {
         doReturn(contexts)
             .whenever(config).contexts
         doReturn(currentContext)
@@ -239,7 +278,7 @@ object ClientMocks {
         name: String,
         namespace: String? = null,
         uid: String? = System.currentTimeMillis().toString(),
-        apiVersion: String,
+        apiVersion: String = "v1",
         resourceVersion: String? = System.currentTimeMillis().toString()): T {
         val metadata = objectMeta(name, namespace, uid, resourceVersion)
         return mock {
@@ -319,7 +358,7 @@ object ClientMocks {
         )
     }
 
-    fun apiResource(name: String, singularName: String, namespaced: Boolean, kind: String): APIResource {
+    private fun apiResource(name: String, singularName: String, namespaced: Boolean, kind: String): APIResource {
         return APIResource().apply {
             this.name = name
             this.singularName = singularName
@@ -328,5 +367,43 @@ object ClientMocks {
         }
     }
 
+    fun container(name: String): Container {
+        return mock {
+            on { mock.name } doReturn name
+        }
+    }
+    fun setContainers(pod: Pod, vararg containers: Container): Pod {
+        val spec = podSpec(pod)
+        doReturn(listOf(*containers))
+            .whenever(spec).containers
+        return pod
+    }
+
+    fun podSpec(pod: Pod): PodSpec {
+        val spec: PodSpec = mock()
+        doReturn(spec)
+            .whenever(pod).spec
+        return spec
+    }
+
+    fun podSpec(job: Job): PodSpec {
+        val podSpec: PodSpec = mock()
+        val podTemplateSpec: PodTemplateSpec = mock()
+        val spec: JobSpec = mock()
+        doReturn(podTemplateSpec)
+            .whenever(spec).template
+        doReturn(podSpec)
+            .whenever(podTemplateSpec).spec
+        doReturn(spec)
+            .whenever(job).spec
+        return podSpec
+    }
+
+    fun setContainers(job: Job, vararg containers: Container): Job {
+        val podSpec = podSpec(job)
+        doReturn(listOf(*containers))
+            .whenever(podSpec).containers
+        return job
+    }
 
 }

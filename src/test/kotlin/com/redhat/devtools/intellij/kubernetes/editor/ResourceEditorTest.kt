@@ -77,9 +77,10 @@ spec:
          - "echo kube"
       restartPolicy: Never
 """
+
     // need real resources, not mocks - #equals used to track changes
-    private val GARGAMEL = PodBuilder(POD2)
-        .editMetadata()
+    private val GARGAMEL = PodBuilder()
+        .withNewMetadata()
             .withName("Gargamel")
             .withNamespace("namespace2")
             .withResourceVersion("1")
@@ -187,7 +188,7 @@ spec:
     @Before
     fun before() {
         doReturn(YAMLFileType.YML)
-            .whenever(psiFile).getFileType()
+            .whenever(psiFile).fileType
         doReturn(psiFile)
             .whenever(psiDocumentManager).getPsiFile(any())
     }
@@ -791,7 +792,7 @@ spec:
         whenever(clusterResource.isClosed())
             .doReturn(false)
         // when
-        editor.currentNamespace("castle gargamel")
+        editor.currentNamespaceChanged(mock(), mock())
         // then
         verify(clusterResourceFactory).invoke(any(), any())
     }
@@ -800,9 +801,26 @@ spec:
     fun `#currentNamespace should clear saved resourceVersion`() {
         // given
         // when
-        editor.currentNamespace("castle gargamel")
+        editor.currentNamespaceChanged(mock(), mock())
         // then
         verify(resourceVersion).set(null)
+    }
+
+    @Test
+    fun `#init should start listening to resource model`() {
+        // given
+        // when
+        // then
+        verify(resourceModel).addListener(editor)
+    }
+
+    @Test
+    fun `#dispose should stop listening to resource model`() {
+        // given
+        // when
+        editor.dispose()
+        // then
+        verify(resourceModel).removeListener(editor)
     }
 
     private fun givenEditorResourceIsOutdated(outdated: Boolean) {

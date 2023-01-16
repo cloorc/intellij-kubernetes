@@ -11,6 +11,10 @@
 package com.redhat.devtools.intellij.kubernetes.model.context
 
 import com.redhat.devtools.intellij.common.kubernetes.ClusterInfo
+import com.redhat.devtools.intellij.kubernetes.model.IResourceModelObservable
+import com.redhat.devtools.intellij.kubernetes.model.client.ClientAdapter
+import com.redhat.devtools.intellij.kubernetes.model.client.KubeClientAdapter
+import com.redhat.devtools.intellij.kubernetes.model.client.OSClientAdapter
 import com.redhat.devtools.intellij.kubernetes.model.resource.ResourceKind
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource
 import io.fabric8.kubernetes.api.model.HasMetadata
@@ -18,11 +22,33 @@ import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinition
 import io.fabric8.kubernetes.client.KubernetesClient
 import io.fabric8.kubernetes.client.Watch
 import io.fabric8.kubernetes.client.Watcher
-import io.fabric8.kubernetes.client.dsl.LogWatch
-import java.io.OutputStream
 import java.net.URL
 
 interface IActiveContext<N: HasMetadata, C: KubernetesClient>: IContext {
+
+    companion object Factory {
+        fun create(
+            client: ClientAdapter<out KubernetesClient>,
+            observable: IResourceModelObservable
+        ): IActiveContext<out HasMetadata, out KubernetesClient>? {
+            val currentContext = client.config.currentContext ?: return null
+            return if (client.isOpenShift()) {
+                OpenShiftContext(
+                    currentContext,
+                    observable,
+                    client as OSClientAdapter
+                )
+            } else {
+                KubernetesContext(
+                    currentContext,
+                    observable,
+                    client as KubeClientAdapter
+                )
+            }
+        }
+    }
+
+    val client: ClientAdapter<out KubernetesClient>
 
     /**
      * The scope in which resources may exist.
@@ -56,30 +82,25 @@ interface IActiveContext<N: HasMetadata, C: KubernetesClient>: IContext {
     fun isOpenShift(): Boolean
 
     /**
-     * Sets the current namespace for this context.
-     *
-     * @param namespace
-     */
-    fun setCurrentNamespace(namespace: String): Boolean
-
-    /**
      * Returns the current namespace for this context or {@code null} if there's none.
      */
     fun getCurrentNamespace(): String?
 
     /**
-     * Returns {@code true} if the given resource is the current namespace.
+     * Returns `true` if the given resource is the current namespace.
+     * Returns `false` otherwise.
      */
     fun isCurrentNamespace(resource: HasMetadata): Boolean
 
     /**
+     * Returns `true` if the given name is the name of the current namespace.
+     * Returns `false` otherwise.
+     */
+    fun isCurrentNamespace(namespace: String): Boolean
+    /**
      * Deletes the given resources.
      */
     fun delete(resources: List<HasMetadata>)
-
-    fun <T: HasMetadata> watchLog(resource: T, out: OutputStream): LogWatch?
-
-    fun <T: HasMetadata> canWatchLog(resource: T): Boolean
 
     /**
      * Returns all resources of the given kind in the given scope.
@@ -125,9 +146,20 @@ interface IActiveContext<N: HasMetadata, C: KubernetesClient>: IContext {
     /**
      * Watches all resources of the given resource kind
      *
-     * @param kind the kind of resources to ignore
+     * @param kind the kind of resources to watch
+     *
+     * @see [com.redhat.devtools.intellij.kubernetes.model.ResourceWatch.watch]
      */
     fun watch(kind: ResourceKind<out HasMetadata>)
+
+    /**
+     * Watches all the given resource kinds
+     *
+     * @param kinds the kinds of resources to watch
+     *
+     * @see [com.redhat.devtools.intellij.kubernetes.model.ResourceWatch.watch]
+     */
+    fun watchAll(kinds: Collection<ResourceKind<out HasMetadata>>)
 
     /**
      * Watches all resources of the kind specified by the given custom resource definition
@@ -157,10 +189,17 @@ interface IActiveContext<N: HasMetadata, C: KubernetesClient>: IContext {
      *
      * @param definition the custom resource definition that specifies the custom resources to watch
      *
-     * @see CustomResourceDefinition
-     * @see CustomResourceDefinitionSpec
+     * @see io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinition
+     * @see io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinitionSpec
      */
     fun stopWatch(definition: CustomResourceDefinition)
+
+    /**
+     * Returns all the [ResourceKind]s that are watched in this context.
+     *
+     * @return all the resource kinds that are watched.
+     */
+    fun getWatched(): Collection<ResourceKind<out HasMetadata>>
 
     /**
      * Adds the given resource to this context.

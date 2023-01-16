@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.redhat.devtools.intellij.kubernetes</id>
     <name>Kubernetes by Red Hat</name>
-    <vendor email="developers@redhat.com" url="http://www.redhat.com">Red-Hat</vendor>
+    <vendor email="developers@redhat.com" url="https://www.redhat.com">Red-Hat</vendor>
     <description>
         <![CDATA[
         <p>A plugin for interacting with Kubernetes and OpenShift clusters.</p>
@@ -10,6 +10,25 @@
     </description>
     <change-notes>
         <![CDATA[
+        <h3>0.7.0</h3>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/214">As a user I want to be able to open a terminal in a pod</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/461">cannot follow logs for a pod with multiple containers</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/523">Support init containers</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/492">when switching current namespace, editor still saves to previous namespace</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/530">Can push yml resource without a name but no resource is created, "pull" and "diff" actions do nothing</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/493">IDE stuck for some second when opening yaml files and not being connected to any cluster</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/513">Cannot set new context if there's no current context yet</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/485">Pushing a 2nd time errors with empty error details</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/469">lighten up icons and provide separate icons for the light theme</a></li>
+        </ul>
+        <p></p>
+        <h3>0.6.2</h3>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/477">Prevent from failure of adding special characters on following pod log</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/478">resource tree: pods for jobs are not displayed</a></li>
+        </ul>
+        <p></p>
         <h3>0.6.1</h3>
         <ul>
             <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/458">Switch to IJ common 1.7.1 as it breaks dependent plugins</a></li>
@@ -119,11 +138,11 @@
                     anchor="left"
                     factoryClass="com.redhat.devtools.intellij.kubernetes.tree.ResourceTreeToolWindowFactory"
                     icon="/META-INF/pluginIcon13x13.svg"/>
-        <toolWindow id="Kubernetes Logs"
+        <toolWindow id="Kubernetes Consoles"
                     anchor="bottom"
-                    factoryClass="com.redhat.devtools.intellij.kubernetes.logs.LogsToolWindowFactory"
+                    factoryClass="com.redhat.devtools.intellij.kubernetes.console.ConsolesToolWindowFactory"
                     canCloseContents="true"
-                    icon="/icons/logs.svg"/>
+                    icon="Icons.consolesToolwindow"/>
         <applicationService serviceInterface="com.redhat.devtools.intellij.kubernetes.model.IResourceModel"
                             serviceImplementation="com.redhat.devtools.intellij.kubernetes.model.ResourceModel"/>
         <nonProjectFileWritingAccessExtension implementation="com.redhat.devtools.intellij.common.editor.AllowNonProjectEditing" />
@@ -170,26 +189,30 @@
             <action class="com.redhat.devtools.intellij.kubernetes.actions.FollowLogsAction"
                     id="com.redhat.devtools.intellij.kubernetes.actions.ShowLogsAction"
                     text="Follow Log"
-                    icon="/icons/logs.svg"/>
+                    icon="Icons.consoles"/>
+            <action class="com.redhat.devtools.intellij.kubernetes.actions.TerminalAction"
+                    id="com.redhat.devtools.intellij.kubernetes.actions.TerminalAction"
+                    text="Terminal"
+                    icon="Icons.terminal"/>
         </group>
 
         <group id="Kubernetes.Editor.Toolbar" class="com.intellij.openapi.actionSystem.DefaultActionGroup">
             <action class="com.redhat.devtools.intellij.kubernetes.editor.actions.PushAction"
                     id="com.redhat.devtools.intellij.kubernetes.editor.actions.PushAction"
                     text="Push Editor to the Cluster"
-                    icon="/icons/upload.svg" />
+                    icon="Icons.upload" />
             <action class="com.redhat.devtools.intellij.kubernetes.editor.actions.PullAction"
                     id="com.redhat.devtools.intellij.kubernetes.editor.actions.PullAction"
                     text="Pull from Cluster to the Editor"
-                    icon="/icons/download.svg" />
+                    icon="Icons.download" />
             <action class="com.redhat.devtools.intellij.kubernetes.editor.actions.DiffAction"
                     id="com.redhat.devtools.intellij.kubernetes.editor.actions.DiffAction"
                     text="Diff Editor Resource with Cluster Resource"
-                    icon="/icons/diff.svg" />
+                    icon="Icons.diff" />
             <action class="com.redhat.devtools.intellij.kubernetes.editor.actions.RemoveClutterAction"
                     id="com.redhat.devtools.intellij.kubernetes.editor.actions.RemoveClutterAction"
                     text="Remove Metadata Clutter in Editor"
-                    icon="/icons/remove-clutter.svg" />
+                    icon="Icons.removeClutter" />
         </group>
     </actions>
 

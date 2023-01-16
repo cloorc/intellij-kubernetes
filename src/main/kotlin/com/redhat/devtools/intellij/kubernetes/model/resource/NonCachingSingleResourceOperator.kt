@@ -10,6 +10,8 @@
  ******************************************************************************/
 package com.redhat.devtools.intellij.kubernetes.model.resource
 
+import com.redhat.devtools.intellij.kubernetes.model.client.ClientAdapter
+import com.redhat.devtools.intellij.kubernetes.model.util.ResourceException
 import com.redhat.devtools.intellij.kubernetes.model.util.hasGenerateName
 import com.redhat.devtools.intellij.kubernetes.model.util.hasName
 import io.fabric8.kubernetes.api.model.APIResource
@@ -34,7 +36,10 @@ import java.net.HttpURLConnection
  * retrieve, create, replace or watch a resource on the current cluster.
  * API discovery is executed and a [KubernetesClientException] is thrown if resource kind and version are not supported.
  */
-class NonCachingSingleResourceOperator(private val client: KubernetesClient, private val api: APIResources = APIResources(client)) {
+class NonCachingSingleResourceOperator(
+    private val client: ClientAdapter<out KubernetesClient>,
+    private val api: APIResources = APIResources(client)
+) {
 
     /**
      * Returns the latest version of the given resource from cluster. Returns `null` if none was found.
@@ -68,6 +73,7 @@ class NonCachingSingleResourceOperator(private val client: KubernetesClient, pri
      * If there's no `name` you need to use [io.fabric8.kubernetes.client.dsl.MixedOperation.create].
      *
      * @param resource that shall be replaced on the cluster
+     * @throws ResourceException if given resource has neither a name nor a generateName
      *
      * @return the resource that was created
      */
@@ -80,7 +86,7 @@ class NonCachingSingleResourceOperator(private val client: KubernetesClient, pri
         } else if (hasGenerateName(genericKubernetesResource)) {
             op.create(genericKubernetesResource)
         } else {
-            null
+            throw ResourceException("Could not replace ${resource.kind ?: "resource"}: has neither name nor generateName.")
         }
     }
 
@@ -109,10 +115,12 @@ class NonCachingSingleResourceOperator(private val client: KubernetesClient, pri
         return if (context.isNamespaceScoped
             && true == inNamespace?.isNotEmpty()
         ) {
-            client.genericKubernetesResources(context)
+            client.get()
+                .genericKubernetesResources(context)
                 .inNamespace(inNamespace)
         } else {
-            client.genericKubernetesResources(context)
+            client.get()
+                .genericKubernetesResources(context)
         }
     }
 
@@ -169,7 +177,7 @@ class NonCachingSingleResourceOperator(private val client: KubernetesClient, pri
             ?: throw throw createKubernetesException(kind, group, version)
     }
 
-    private fun resourceOrClientNamespace(resource: HasMetadata?, client: KubernetesClient): String? {
+    private fun resourceOrClientNamespace(resource: HasMetadata?, client: ClientAdapter<out KubernetesClient>): String? {
         return if (true == resource?.metadata?.namespace?.isNotBlank()) {
             resource.metadata.namespace
         } else {
