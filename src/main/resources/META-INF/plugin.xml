@@ -10,6 +10,86 @@
     </description>
     <change-notes>
         <![CDATA[
+        <h3>1.3.0</h3>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/726">Support for clusters using OpenID auth providers</a></li>
+        </ul>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/717">Allow to set current namespace even if listing them is not possible</a></li>
+        </ul>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/663">Allow to easily edit Secrets in the editor</a></li>
+        </ul>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/572">Allow force delete resource</a></li>
+        </ul>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/719">Add compatibility to IDEA 2024.1</a></li>
+        </ul>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/637">Make sure text field for current namespace is visible on Linux</a></li>
+        </ul>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/713">Use latest kubernetes-client 6.12.0</a></li>
+        </ul>
+        <h3>1.2.3</h3>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/696">1.2.2 is only compatible with IDEA 2023.2+, should be IDEA 2022.1+</a></li>
+        </ul>
+        <h3>1.2.2</h3>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/693">bump telemetry to 1.1.0.52</a></li>
+        </ul>
+        <h3>1.2.1</h3>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/669">"Current namespace" of my old context is overwritten when I switch to a new context</a></li>
+        </ul>
+        <h3>1.2.0</h3>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/615">As a user I want to be able to scale a deployment up or down without editing the yaml</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/650">As a user I want to have Replica Sets and Replication Controllers listed in the resource tree</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/652">Option "Show directory for non-unique file names" stops working</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/28">Error nodes: improve text to include the reason for the failure</a></li>
+        </ul>
+        <h3>1.1.0</h3>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/617">As a user I want to be able to open the web console for Kubernetes or OpenShift cluster</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/640">When switching current namespace with minikube, context gets <unknown context> and collapsing the resource tree</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/636">On startup, resource tree is not available as long as IDEA is indexing</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/644">Editor is not updating a 'modified' notification if the resource (on cluster) is deleted</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/613">The editor is freezing for a few seconds before it's opened when I'm using Red Hat Developer Sandbox </a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/634">If pushing to the cluster errors, I am not notified of the error but prompted to push again</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/621">Given that my token for the cluster is expired, the editor erroneously thinks that the resource doesn't exist</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/622">When pushing to a cluster whose token is expired, the editor is freezing IDEA</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/618">Fatal IDE error when trying to diff with a cluster that's not reachable (off or not authenticated)</a></li>
+        </ul>
+        <h3>1.0.1</h3>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/611">Display routes for OpenShift clusters</a></li>
+        </ul>
+        <h3>1.0.0</h3>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/600">Support editing a K8s resource on a logged in cluster using private certificate </a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/570">Reduces number of editor notification messages when updating K8s resource files.</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/521">Allows the user to set the Namespace/Project from Context Menu</a></li>
+        </ul>
+        <h3>0.8.1</h3>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/586">As a user I want to be able to use a KUBECONFIG at any location, not just the default</a></li>
+        </ul>
+        <h3>0.8.0</h3>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/549">Feature Request: Support Multi Resource Files</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/561">Pushing pod with spec errors if it already exists on cluster</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/569">Pushing existing resource to a different namespace causes error</a></li>
+        </ul>
+        <p></p>
+        <h3>0.7.1</h3>
+        <ul>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/537">logs/terminal: allow to inspect error details</a></li>
+            <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/500">migrate to kubernetes-client 6.4.0</a></li>
+        </ul>
+        <p></p>
         <h3>0.7.0</h3>
         <ul>
             <li><a href="https://github.com/redhat-developer/intellij-kubernetes/issues/214">As a user I want to be able to open a terminal in a pod</a></li>
@@ -148,6 +228,9 @@
         <nonProjectFileWritingAccessExtension implementation="com.redhat.devtools.intellij.common.editor.AllowNonProjectEditing" />
         <postStartupActivity implementation="com.redhat.devtools.intellij.kubernetes.KubernetesPluginInitializer" />
         <editorTabTitleProvider implementation="com.redhat.devtools.intellij.kubernetes.editor.ResourceEditorTabTitleProvider"/>
+        <codeInsight.inlayProvider language="yaml"
+                                   implementationClass="com.redhat.devtools.intellij.kubernetes.editor.inlay.Base64ValueInlayHintsProvider"
+                                   id="MarkdownTableInlayProvider"/>
     </extensions>
 
     <extensionPoints>
@@ -170,9 +253,21 @@
                     id="com.redhat.devtools.intellij.kubernetes.actions.UseNamespaceAction"
                     text="Use Namespace"
                     icon="AllIcons.Nodes.EmptyNode"/>
+            <action class="com.redhat.devtools.intellij.kubernetes.actions.SetCurrentNamespaceAction"
+                    id="com.redhat.devtools.intellij.kubernetes.actions.SetCurrentNamespaceAction"
+                    text="Set Current Namespace"
+                    icon="AllIcons.Nodes.EmptyNode"/>
             <action class="com.redhat.devtools.intellij.kubernetes.actions.UseProjectAction"
                     id="com.redhat.devtools.intellij.kubernetes.actions.UseProjectAction"
                     text="Use Project"
+                    icon="AllIcons.Nodes.EmptyNode"/>
+            <action class="com.redhat.devtools.intellij.kubernetes.actions.SetCurrentProjectAction"
+                    id="com.redhat.devtools.intellij.kubernetes.actions.SetCurrentProjectAction"
+                    text="Set Current Project"
+                    icon="AllIcons.Nodes.EmptyNode"/>
+            <action class="com.redhat.devtools.intellij.kubernetes.actions.ScaleReplicaAction"
+                    id="com.redhat.devtools.intellij.kubernetes.actions.ScaleReplicaAction"
+                    text="Scale"
                     icon="AllIcons.Nodes.EmptyNode"/>
             <action class="com.redhat.devtools.intellij.kubernetes.actions.EditResourceAction"
                     id="com.redhat.devtools.intellij.kubernetes.actions.EditResourceAction"
@@ -194,13 +289,21 @@
                     id="com.redhat.devtools.intellij.kubernetes.actions.TerminalAction"
                     text="Terminal"
                     icon="Icons.terminal"/>
+            <action class="com.redhat.devtools.intellij.kubernetes.actions.OpenDashboardAction"
+                    id="com.redhat.devtools.intellij.kubernetes.actions.OpenDashboardAction"
+                    text="Open Dashboard"
+                    icon="AllIcons.Nodes.EmptyNode"/>
         </group>
 
         <group id="Kubernetes.Editor.Toolbar" class="com.intellij.openapi.actionSystem.DefaultActionGroup">
-            <action class="com.redhat.devtools.intellij.kubernetes.editor.actions.PushAction"
-                    id="com.redhat.devtools.intellij.kubernetes.editor.actions.PushAction"
-                    text="Push Editor to the Cluster"
+            <action class="com.redhat.devtools.intellij.kubernetes.editor.actions.PushAllAction"
+                    id="com.redhat.devtools.intellij.kubernetes.editor.actions.PushAllAction"
+                    text="Push All Resource(s) to Cluster"
                     icon="Icons.upload" />
+            <action class="com.redhat.devtools.intellij.kubernetes.editor.actions.PushModifiedAction"
+                    id="com.redhat.devtools.intellij.kubernetes.editor.actions.PushModifiedAction"
+                    text="Push Modified Resource(s) to Cluster"
+                    icon="Icons.uploadModified" />
             <action class="com.redhat.devtools.intellij.kubernetes.editor.actions.PullAction"
                     id="com.redhat.devtools.intellij.kubernetes.editor.actions.PullAction"
                     text="Pull from Cluster to the Editor"

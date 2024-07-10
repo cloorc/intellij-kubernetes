@@ -26,6 +26,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public class EditResourceTest extends AbstractKubernetesTest{
     public static void editResource(RemoteRobot robot, ComponentFixture kubernetesViewTree){
+        String yodaLabel = "yoda_label";
+        String yodaText = "yoda_text";
+
         openResourceContentList(new String[]{"Nodes"}, kubernetesViewTree);
         RemoteText selectedResource = getResourceByIdInParent("Nodes", 0, kubernetesViewTree);
         selectedResource.doubleClick();
@@ -33,19 +36,10 @@ public class EditResourceTest extends AbstractKubernetesTest{
         EditorsSplittersFixture editorSplitter = robot.find(EditorsSplittersFixture.class);
         String editorTitle = selectedResource.getText();
 
-        ComponentFixture textFixture = editorSplitter.getEditorTextFixture();
-        List<RemoteText> remote_text = textFixture.findAllText();
-        int labelsId = 0;
-        for (RemoteText actual_remote_text : remote_text){
-            if ("labels".equals(actual_remote_text.getText())){
-                break;
-            }
-            labelsId++;
-        }
-        RemoteText placeForNewLabel = remote_text.get(labelsId+2); // +1 because we need the next one, +1 because between every 2 real elements is space
+        RemoteText placeForNewLabel = getPlaceForNewLabel(editorSplitter);
         placeForNewLabel.click();
 
-        String text = "    some_label: \"some_label";
+        String text = "    " + yodaLabel +": \"" + yodaText;
         Keyboard my_keyboard = new Keyboard(robot);
 
         my_keyboard.enter(); // create empty line
@@ -62,10 +56,11 @@ public class EditResourceTest extends AbstractKubernetesTest{
 
         selectedResource.doubleClick();
         ComponentFixture textFixtureNew = editorSplitter.getEditorTextFixture();
+        scrollToVisible(yodaLabel, robot);
         List<RemoteText> remoteTextNew = textFixtureNew.findAllText();
         boolean labelExist = false;
         for (RemoteText actual_remote_text : remoteTextNew){
-            if (actual_remote_text.getText().contains("some_label")){
+            if (actual_remote_text.getText().contains(yodaText)){
                 labelExist = true;
                 break;
             }
@@ -74,6 +69,25 @@ public class EditResourceTest extends AbstractKubernetesTest{
         editorSplitter.closeEditor(editorTitle); // close editor
         hideClusterContent(kubernetesViewTree);
 
-        assertTrue(labelExist);
+        assertTrue(labelExist, "Label '" + yodaLabel + "' not found.");
+    }
+
+    private static RemoteText getPlaceForNewLabel (EditorsSplittersFixture editorSplitter) {
+        ComponentFixture textFixture = editorSplitter.getEditorTextFixture();
+        List<RemoteText> remote_text = textFixture.findAllText();
+
+        int labelsId = 0;
+        boolean labelsFound = false;
+        for (RemoteText actual_remote_text : remote_text){
+            if ("labels".equals(actual_remote_text.getText())){
+                labelsFound = true;
+                break;
+            }
+            labelsId++;
+        }
+
+        assertTrue(labelsFound, "Labels not found in resource.");
+
+        return remote_text.get(labelsId+2); // +1 because we need the next one, +1 because between every 2 real elements is space
     }
 }

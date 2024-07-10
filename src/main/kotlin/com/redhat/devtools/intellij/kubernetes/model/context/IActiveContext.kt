@@ -16,6 +16,7 @@ import com.redhat.devtools.intellij.kubernetes.model.client.ClientAdapter
 import com.redhat.devtools.intellij.kubernetes.model.client.KubeClientAdapter
 import com.redhat.devtools.intellij.kubernetes.model.client.OSClientAdapter
 import com.redhat.devtools.intellij.kubernetes.model.resource.ResourceKind
+import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.KubernetesReplicas.Replicator
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource
 import io.fabric8.kubernetes.api.model.HasMetadata
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinition
@@ -48,8 +49,6 @@ interface IActiveContext<N: HasMetadata, C: KubernetesClient>: IContext {
         }
     }
 
-    val client: ClientAdapter<out KubernetesClient>
-
     /**
      * The scope in which resources may exist.
      */
@@ -66,6 +65,10 @@ interface IActiveContext<N: HasMetadata, C: KubernetesClient>: IContext {
         }
     }
 
+    val name: String?
+        get() {
+            return context.name
+        }
     /**
      * The master url for this context. This is the url of the cluster for this context.
      */
@@ -97,10 +100,14 @@ interface IActiveContext<N: HasMetadata, C: KubernetesClient>: IContext {
      * Returns `false` otherwise.
      */
     fun isCurrentNamespace(namespace: String): Boolean
+
     /**
      * Deletes the given resources.
+     *
+     * @param resources the resources to delete
+     * @param force whether deletion should be forced (immediate deletion, no grace period)
      */
-    fun delete(resources: List<HasMetadata>)
+    fun delete(resources: List<HasMetadata>, force: Boolean)
 
     /**
      * Returns all resources of the given kind in the given scope.
@@ -135,13 +142,41 @@ interface IActiveContext<N: HasMetadata, C: KubernetesClient>: IContext {
     fun get(resource: HasMetadata): HasMetadata?
 
     /**
-     * Replaces the given resource on the cluster if it exists. Creates a new one if it doesn't.
+     * Creates the given resource on the cluster if it doesn't exist. Throws if it exists already.
      *
-     * @param resource that shall be replaced on the cluster
+     * @param resource that shall be created on the cluster
      *
      * @return the resource that was created
      */
+    fun create(resource: HasMetadata): HasMetadata?
+
+    /**
+     * Replaces the given resource on the cluster if it exists. Throws if it doesn't.
+     *
+     * @param resource that shall be replaced on the cluster
+     *
+     * @return the resource that was replaced
+     */
     fun replace(resource: HasMetadata): HasMetadata?
+
+    /**
+     * Sets the replicas for the given [Replicator]
+     *
+     * @param replicas the number of replicas to set
+     * @param replicator the resource to set the replicas to
+     *
+     * @see Replicator
+     */
+    fun setReplicas(replicas: Int, replicator: Replicator)
+
+    /**
+     * Returns the replicas for the given resource.
+     * Returns `null` replicas are not defined or the given resource does not specify those.
+     *
+     * @param resource the resource to get the replicas from
+     * @return returns an instance of the resource that can be replicated or null if there's none
+     */
+    fun getReplicas(resource: HasMetadata): Replicator?
 
     /**
      * Watches all resources of the given resource kind
@@ -241,6 +276,14 @@ interface IActiveContext<N: HasMetadata, C: KubernetesClient>: IContext {
      * @return true if the resource was replaced
      */
     fun replaced(resource: HasMetadata): Boolean
+
+    /**
+     * Returns the url of the Dashboard for this context.
+     * Throws if the url could not be determined.
+     *
+     * @return the url of the Dashboard for this context
+     */
+    fun getDashboardUrl(): String
 
     /**
      * Closes and disposes this context.

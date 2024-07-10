@@ -18,28 +18,34 @@ import com.nhaarman.mockitokotlin2.doReturn
 import com.nhaarman.mockitokotlin2.mock
 import com.nhaarman.mockitokotlin2.never
 import com.nhaarman.mockitokotlin2.spy
+import com.nhaarman.mockitokotlin2.times
 import com.nhaarman.mockitokotlin2.verify
 import com.nhaarman.mockitokotlin2.whenever
 import com.redhat.devtools.intellij.kubernetes.model.client.KubeClientAdapter
 import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.clusterScopedApiResource
 import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.namespacedApiResource
 import com.redhat.devtools.intellij.kubernetes.model.util.ResourceException
-import com.redhat.devtools.intellij.kubernetes.model.util.isSameResource
 import io.fabric8.kubernetes.api.model.APIResource
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource
 import io.fabric8.kubernetes.api.model.GenericKubernetesResourceList
 import io.fabric8.kubernetes.api.model.HasMetadata
+import io.fabric8.kubernetes.api.model.ManagedFieldsEntry
+import io.fabric8.kubernetes.api.model.ObjectMeta
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder
 import io.fabric8.kubernetes.api.model.PodBuilder
 import io.fabric8.kubernetes.client.KubernetesClientException
 import io.fabric8.kubernetes.client.NamespacedKubernetesClient
 import io.fabric8.kubernetes.client.dsl.MixedOperation
+import io.fabric8.kubernetes.client.dsl.NonNamespaceOperation
 import io.fabric8.kubernetes.client.dsl.Resource
+import io.fabric8.kubernetes.client.dsl.base.PatchContext
+import io.fabric8.kubernetes.client.dsl.base.PatchType
 import io.fabric8.kubernetes.client.dsl.base.ResourceDefinitionContext
 import io.fabric8.kubernetes.client.utils.ApiVersionUtil
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Before
 import org.junit.Test
+import org.mockito.ArgumentMatcher
 import org.mockito.ArgumentMatchers.anyString
 
 class NonCachingSingleResourceOperatorTest {
@@ -55,37 +61,52 @@ class NonCachingSingleResourceOperatorTest {
             .build()
     }
 
-    private val clusterCustomResource = GenericKubernetesResource().apply {
-        this.apiVersion = "rebels/tatooine"
-        this.kind = "Jedi"
-        this.metadata = ObjectMetaBuilder()
-            .withName("luke")
-            .build()
-    }
-
-    private val legacyResource = PodBuilder()
+    private val namespacedCoreResource = PodBuilder()
         .withApiVersion("v1")
         .withKind("GrandJedi")
         .withNewMetadata()
-            .withName("obwian")
-            .withNamespace("jedis")
+        .withName("obwian")
+        .withNamespace("jedis")
         .endMetadata()
         .build()
 
-    /* client.genericKubernetesResources() */
-    private val genericResourceOperation =
-        createMixedOperation<GenericKubernetesResource, GenericKubernetesResourceList>(namespacedCustomResource)
+    private val clusterscopedCoreResource = PodBuilder()
+        .withApiVersion("v1")
+        .withKind("GrandJedi")
+        .withNewMetadata()
+        // no namespace
+        .withName("Mace Windu")
+        .endMetadata()
+        .build()
+
+    /** .withName(name) */
+    private val withNameOp: Resource<GenericKubernetesResource> = mock()
+    /** .resource(resource) */
+    private val resourceOp: Resource<GenericKubernetesResource> = mock()
+    /** .inNamespace(namespace) */
+    private val inNamespaceOp =
+        mock<MixedOperation<GenericKubernetesResource, GenericKubernetesResourceList, Resource<GenericKubernetesResource>>>() {
+            on { withName(any()) } doReturn withNameOp
+            on { resource(any()) } doReturn resourceOp
+        }
+
+    /** client.genericKubernetesResources() */
+    private val genericKubernetesResourcesOp =
+        mock<MixedOperation<GenericKubernetesResource, GenericKubernetesResourceList, Resource<GenericKubernetesResource>>> {
+            on { inNamespace(any()) } doReturn inNamespaceOp
+            on { resource(any()) } doReturn resourceOp
+        }
 
     private val client = createClient(
         clientNamespace,
-        genericResourceOperation
+        genericKubernetesResourcesOp
     )
 
     private val clientAdapter: KubeClientAdapter = KubeClientAdapter(client)
 
     @Before
     fun before() {
-        clearInvocations(genericResourceOperation)
+        clearInvocations(genericKubernetesResourcesOp)
     }
 
     @Test
@@ -97,19 +118,20 @@ class NonCachingSingleResourceOperatorTest {
         operator.get(namespacedCustomResource)
         // then
         verify(client).genericKubernetesResources(argThat {
-                kind == namespacedCustomResource.kind
-                        && isNamespaceScoped
-                        && group == ApiVersionUtil.trimGroupOrNull(namespacedCustomResource.apiVersion)
-                        && version == ApiVersionUtil.trimVersion(namespacedCustomResource.apiVersion)
+            kind == namespacedCustomResource.kind
+                    && isNamespaceScoped
+                    && group == ApiVersionUtil.trimGroupOrNull(namespacedCustomResource.apiVersion)
+                    && version == ApiVersionUtil.trimVersion(namespacedCustomResource.apiVersion)
         })
     }
 
     @Test
-    fun `#get should return NULL and NOT call client#genericKubernetesResource(context) if resource has NO name`() {
+    fun `#get should return NULL and NOT call client#genericKubernetesResource(context) if resource has NO name NOR generateName`() {
         // given
-        val unnamed = PodBuilder(legacyResource)
+        val unnamed = PodBuilder(namespacedCoreResource)
             .build()
         unnamed.metadata.name = null
+        unnamed.metadata.generateName = null
         val apiResource = namespacedApiResource(unnamed)
         val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
         // when
@@ -127,7 +149,7 @@ class NonCachingSingleResourceOperatorTest {
         // when
         operator.get(namespacedCustomResource)
         // then
-        verify(genericResourceOperation).inNamespace(namespacedCustomResource.metadata.namespace)
+        verify(genericKubernetesResourcesOp).inNamespace(namespacedCustomResource.metadata.namespace)
     }
 
     @Test
@@ -142,18 +164,19 @@ class NonCachingSingleResourceOperatorTest {
         // when
         operator.get(namespacedCustomResource)
         // then
-        verify(genericResourceOperation).inNamespace(client.namespace)
+        verify(genericKubernetesResourcesOp).inNamespace(client.namespace)
     }
 
     @Test
-    fun `#get should NOT call client#genericKubernetesResources()#inNamespace() if resource is cluster scoped`() {
+    fun `#get should call client#genericKubernetesResources()#inNamespace(clientNamespace)#withName() if custom has name`() {
         // given
-        val apiResource = clusterScopedApiResource(clusterCustomResource)
+        val apiResource = namespacedApiResource(namespacedCustomResource)
         val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
         // when
-        operator.get(clusterCustomResource)
+        operator.get(namespacedCustomResource)
         // then
-        verify(genericResourceOperation, never()).inNamespace(any())
+        verify(genericKubernetesResourcesOp.inNamespace(namespacedCoreResource.metadata.name))
+            .withName(namespacedCustomResource.metadata.name)
     }
 
     @Test(expected = KubernetesClientException::class)
@@ -166,57 +189,195 @@ class NonCachingSingleResourceOperatorTest {
     }
 
     @Test
-    fun `#replace should call client#genericKubernetesResource(context) if resource has a name`() {
+    fun `#create should call #patch(SERVER_SIDE_APPLY) if resource has a name and NO managed fields`() {
         // given
-        val apiResource = namespacedApiResource(namespacedCustomResource)
+        val metadata = ObjectMetaBuilder().build().apply {
+            managedFields = null
+        }
+        val hasName = PodBuilder(namespacedCoreResource)
+            .withMetadata(metadata)
+            .build()
+        hasName.metadata.name = "yoda"
+        hasName.metadata.generateName = null
+        val apiResource = namespacedApiResource(namespacedCoreResource)
         val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
         // when
-        operator.replace(namespacedCustomResource)
+        operator.create(hasName)
         // then
-        verify(client).genericKubernetesResources(argThat {
-            matchesContext(namespacedCustomResource, true, this) })
+        verify(resourceOp)
+            .patch(argThat(ArgumentMatcher<PatchContext> { context ->
+                context.patchType == PatchType.SERVER_SIDE_APPLY
+            }))
     }
 
     @Test
-    fun `#replace should call #createOrReplace() if resource has a name`() {
+    fun `#create should call #create if resource has no name`() {
         // given
-        val apiResource = namespacedApiResource(namespacedCustomResource)
+        val hasNoName = PodBuilder(namespacedCoreResource)
+            .withNewMetadata()
+                .withManagedFields(ManagedFieldsEntry())
+            .endMetadata()
+            .build()
+        val apiResource = namespacedApiResource(namespacedCoreResource)
         val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
         // when
-        operator.replace(namespacedCustomResource)
+        operator.create(hasNoName)
         // then
-        verify(genericResourceOperation.inNamespace(namespacedCustomResource.metadata.namespace))
-            .createOrReplace(argThat {
-                isSameResource(namespacedCustomResource)
-            })
+        verify(resourceOp)
+            .create()
+    }
+
+    @Test
+    fun `#create should remove resourceVersion and uid before calling #create`() {
+        // given
+        val metadata = mock<ObjectMeta>()
+        val genericResource = mock<GenericKubernetesResource> {
+            on { getMetadata() } doReturn metadata
+        }
+        val hasNoName = PodBuilder(namespacedCoreResource)
+            .withMetadata(metadata)
+            .build()
+        val apiResource = namespacedApiResource(namespacedCoreResource)
+        val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
+            { resource -> genericResource }
+        // when
+        operator.create(hasNoName)
+        // then
+        verify(resourceOp).create() // make sure #create was called as this only applies when #create is called
+        verify(metadata, times(2)).setResourceVersion(null) //
+        verify(metadata, times(2)).setUid(null)
+    }
+
+    @Test
+    fun `#create should call #create if resource has a name but managed fields`() {
+        // given
+        val hasNameAndManagedFields = PodBuilder(namespacedCoreResource)
+            .withNewMetadata()
+                .withManagedFields(ManagedFieldsEntry())
+                .withName("obiwan")
+            .endMetadata()
+            .build()
+        val apiResource = namespacedApiResource(namespacedCoreResource)
+        val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
+        // when
+        operator.create(hasNameAndManagedFields)
+        // then
+        verify(resourceOp)
+            .create()
+    }
+
+    @Test
+    fun `#replace should call #inNamespace for namespaced resource`() {
+        // given
+        val apiResource = namespacedApiResource(namespacedCoreResource)
+        val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
+        // when
+        operator.replace(namespacedCoreResource)
+        // then
+        verify(genericKubernetesResourcesOp)
+            .inNamespace(namespacedCoreResource.metadata.namespace)
+    }
+
+    @Test
+    fun `#replace should NOT call #inNamespace for clusterScoped resource`() {
+        // given
+        val apiResource = clusterScopedApiResource(clusterscopedCoreResource)
+        val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
+        // when
+        operator.replace(clusterscopedCoreResource)
+        // then
+        verify(genericKubernetesResourcesOp, never())
+            .inNamespace(any())
+    }
+
+    @Test
+    fun `#replace should call #patch(STRATEGIC_MERGE) if resource has a name and managed fields`() {
+        // given
+        val metadata = ObjectMetaBuilder()
+            .withManagedFields(ManagedFieldsEntry())
+            .build().apply {
+                name = "yoda"
+                generateName = null
+            }
+        val hasName = PodBuilder(namespacedCoreResource)
+            .withMetadata(metadata)
+            .build()
+        val apiResource = namespacedApiResource(namespacedCoreResource)
+        val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
+        // when
+        operator.replace(hasName)
+        // then
+        verify(resourceOp)
+            .patch(argThat(ArgumentMatcher<PatchContext> { context ->
+                context.patchType == PatchType.STRATEGIC_MERGE
+            }))
+    }
+
+    @Test
+    fun `#replace should call #patch(SERVER_SIDE_APPLY) if resource has a name and NO managed fields`() {
+        // given
+        val metadata = ObjectMetaBuilder()
+            .build().apply {
+                name = "yoda"
+                generateName = null
+                managedFields = null
+            }
+        val hasName = PodBuilder(namespacedCoreResource)
+            .withMetadata(metadata)
+            .build()
+        val apiResource = namespacedApiResource(namespacedCoreResource)
+        val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
+        // when
+        operator.replace(hasName)
+        // then
+        verify(resourceOp)
+            .patch(argThat(ArgumentMatcher<PatchContext> { context ->
+                context.patchType == PatchType.SERVER_SIDE_APPLY
+            }))
     }
 
     @Test
     fun `#replace should call #create() if resource has NO name but has generateName`() {
         // given
-        val generatedName = PodBuilder(legacyResource).build()
-        generatedName.metadata.name = null
-        generatedName.metadata.generateName = "storm trooper clone"
-        val apiResource = namespacedApiResource(namespacedCustomResource)
-        val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
+        val hasGeneratedName = PodBuilder(namespacedCoreResource).build().apply {
+            metadata.name = null
+            metadata.generateName = "storm trooper clone"
+        }
+        val operator = NonCachingSingleResourceOperator(
+            clientAdapter,
+            createAPIResources(namespacedApiResource(hasGeneratedName))
+        )
         // when
-        operator.replace(generatedName)
+        operator.replace(hasGeneratedName)
         // then
-        verify(genericResourceOperation.inNamespace(generatedName.metadata.namespace))
-            .create(argThat { isSameResource(generatedName) })
+        verify(resourceOp)
+            .create()
     }
 
     @Test(expected = ResourceException::class)
     fun `#replace should throw if resource has NO name NOR generateName`() {
         // given
-        val generatedName = PodBuilder(legacyResource).build()
-        generatedName.metadata.name = null
-        generatedName.metadata.generateName = null
+        val generatedName = PodBuilder(namespacedCoreResource).build().apply {
+            metadata.name = null
+            metadata.generateName = null
+        }
         val apiResource = namespacedApiResource(namespacedCustomResource)
         val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
         // when
         operator.replace(generatedName)
         // then
+    }
+
+    @Test
+    fun `#replace should return a clone, NOT the resource that it was given`() {
+        // given
+        val resource = PodBuilder(namespacedCoreResource).build()
+        val apiResource = namespacedApiResource(namespacedCustomResource)
+        val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
+        // when
+        val returned = operator.replace(resource)
+        // then
+        assertThat(returned).isNotSameAs(resource)
     }
 
     @Test
@@ -233,10 +394,34 @@ class NonCachingSingleResourceOperatorTest {
     }
 
     @Test
+    fun `#watch should call client#genericKubernetesResource(context)#withName(name) if resource has a name`() {
+        // given
+        val apiResource = namespacedApiResource(namespacedCustomResource)
+        val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
+        val inNamespaceOperation = mock<NonNamespaceOperation<GenericKubernetesResource, GenericKubernetesResourceList, Resource<GenericKubernetesResource>>> {
+            val withNameOperation = mock<Resource<GenericKubernetesResource>>()
+            on { withName(any()) } doReturn withNameOperation
+        }
+        val genericKubernetesResourceOperation =
+            mock<MixedOperation<GenericKubernetesResource, GenericKubernetesResourceList, Resource<GenericKubernetesResource>>> {
+                on { inNamespace(any()) } doReturn inNamespaceOperation
+            }
+        doReturn(genericKubernetesResourceOperation)
+            .whenever(client).genericKubernetesResources(any())
+        // when
+        operator.watch(namespacedCustomResource, mock())
+        // then
+        verify(inNamespaceOperation)
+            .withName(namespacedCustomResource.metadata.name)
+    }
+
+    @Test
     fun `#watch should return NULL if resource has NO name`() {
         // given
-        val unnamed = PodBuilder(legacyResource).build()
-        unnamed.metadata.name = null
+        val unnamed = PodBuilder(namespacedCoreResource).build().apply {
+            metadata.name = null
+        }
+
         val apiResource = namespacedApiResource(unnamed)
         val operator = NonCachingSingleResourceOperator(clientAdapter, createAPIResources(apiResource))
         // when
@@ -266,30 +451,6 @@ class NonCachingSingleResourceOperatorTest {
         doReturn(namespace)
             .whenever(client).namespace
         return client
-    }
-
-    private fun <T, L> createMixedOperation(resource: T): MixedOperation<T, L, Resource<T>> {
-        val withNameInNamespaceOp: Resource<T> = createWithNameOp(createFromServerOp(resource))
-        val inNamespaceOp: MixedOperation<T, L, Resource<T>> = mock {
-            on { withName(any()) } doReturn withNameInNamespaceOp
-        }
-        val withNameOp: Resource<T> = createWithNameOp(createFromServerOp(resource))
-        return mock {
-            on { inNamespace(any()) } doReturn inNamespaceOp
-            on { withName(any()) } doReturn withNameOp
-        }
-    }
-
-    private fun <T> createWithNameOp(fromServerOp: Resource<T>): Resource<T> {
-        return mock {
-            on { fromServer() } doReturn fromServerOp
-        }
-    }
-
-    private fun <T> createFromServerOp(resource: T): Resource<T> {
-        return mock {
-            on { get() } doReturn resource
-        }
     }
 
     private fun createAPIResources(apiResource: APIResource?): APIResources {

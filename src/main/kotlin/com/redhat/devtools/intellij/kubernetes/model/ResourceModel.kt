@@ -10,6 +10,7 @@
  ******************************************************************************/
 package com.redhat.devtools.intellij.kubernetes.model
 
+import com.google.api.ResourceProto.resource
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.redhat.devtools.intellij.kubernetes.model.client.ClientAdapter
@@ -17,6 +18,7 @@ import com.redhat.devtools.intellij.kubernetes.model.context.IActiveContext
 import com.redhat.devtools.intellij.kubernetes.model.context.IActiveContext.ResourcesIn
 import com.redhat.devtools.intellij.kubernetes.model.context.IContext
 import com.redhat.devtools.intellij.kubernetes.model.resource.ResourceKind
+import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.KubernetesReplicas.*
 import io.fabric8.kubernetes.api.model.Container
 import io.fabric8.kubernetes.api.model.HasMetadata
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinition
@@ -43,12 +45,14 @@ interface IResourceModel {
     fun isCurrentNamespace(resource: HasMetadata): Boolean
     fun <R: HasMetadata> resources(kind: ResourceKind<R>): Namespaceable<R>
     fun resources(definition: CustomResourceDefinition): ListableCustomResources
+    fun setReplicas(replicas: Int, replicator: Replicator)
+    fun getReplicas(resource: HasMetadata): Replicator?
     fun watch(kind: ResourceKind<out HasMetadata>)
     fun watch(definition: CustomResourceDefinition)
     fun stopWatch(kind: ResourceKind<out HasMetadata>)
     fun stopWatch(definition: CustomResourceDefinition)
     fun invalidate(element: Any?)
-    fun delete(resources: List<HasMetadata>)
+    fun delete(resources: List<HasMetadata>, force: Boolean)
     fun canWatchLog(resource: HasMetadata): Boolean
     fun watchLog(container: Container, resource: HasMetadata, out: OutputStream): LogWatch?
     fun stopWatch(watch: LogWatch): Boolean
@@ -70,7 +74,7 @@ interface IResourceModel {
  */
 open class ResourceModel : IResourceModel {
 
-    protected val processWatches by lazy {
+    private val processWatches by lazy {
         ProcessWatches(ClientAdapter.Factory::create)
     }
 
@@ -127,6 +131,14 @@ open class ResourceModel : IResourceModel {
         return allContexts.current?.getAllResources(definition) ?: emptyList()
     }
 
+    override fun setReplicas(replicas: Int, replicator: Replicator) {
+        allContexts.current?.setReplicas(replicas, replicator)
+    }
+
+    override fun getReplicas(resource: HasMetadata): Replicator? {
+        return allContexts.current?.getReplicas(resource)
+    }
+
     override fun watch(kind: ResourceKind<out HasMetadata>) {
         allContexts.current?.watch(kind)
     }
@@ -177,8 +189,8 @@ open class ResourceModel : IResourceModel {
         allContexts.current?.replaced(resource)
     }
 
-    override fun delete(resources: List<HasMetadata>) {
-        allContexts.current?.delete(resources)
+    override fun delete(resources: List<HasMetadata>, force: Boolean) {
+      allContexts.current?.delete(resources, force)
     }
 
     override fun canWatchLog(resource: HasMetadata): Boolean {

@@ -23,6 +23,7 @@ import com.redhat.devtools.intellij.kubernetes.model.context.IActiveContext.Reso
 import com.redhat.devtools.intellij.kubernetes.model.context.IActiveContext.ResourcesIn.ANY_NAMESPACE
 import com.redhat.devtools.intellij.kubernetes.model.context.IActiveContext.ResourcesIn.CURRENT_NAMESPACE
 import com.redhat.devtools.intellij.kubernetes.model.context.IActiveContext.ResourcesIn.NO_NAMESPACE
+import com.redhat.devtools.intellij.kubernetes.model.dashboard.IDashboard
 import com.redhat.devtools.intellij.kubernetes.model.resource.INamespacedResourceOperator
 import com.redhat.devtools.intellij.kubernetes.model.resource.INonNamespacedResourceOperator
 import com.redhat.devtools.intellij.kubernetes.model.resource.IResourceOperator
@@ -35,7 +36,6 @@ import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.custom.
 import com.redhat.devtools.intellij.kubernetes.model.util.MultiResourceException
 import com.redhat.devtools.intellij.kubernetes.model.util.ResourceException
 import com.redhat.devtools.intellij.kubernetes.model.util.isNotFound
-import com.redhat.devtools.intellij.kubernetes.model.util.isSameResource
 import com.redhat.devtools.intellij.kubernetes.model.util.setWillBeDeleted
 import com.redhat.devtools.intellij.kubernetes.model.util.toMessage
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource
@@ -53,9 +53,14 @@ import java.net.URL
 abstract class ActiveContext<N : HasMetadata, C : KubernetesClient>(
     context: NamedContext,
     private val modelChange: IResourceModelObservable,
-    override val client: ClientAdapter<out C>,
-    private var singleResourceOperator: NonCachingSingleResourceOperator = NonCachingSingleResourceOperator(client)
+    val client: ClientAdapter<out C>,
+    protected open val dashboard: IDashboard,
+    private var singleResourceOperator: NonCachingSingleResourceOperator = NonCachingSingleResourceOperator(client),
 ) : Context(context), IActiveContext<N, C> {
+
+    companion object {
+        private const val DEFAULT_NAMESPACE = "default"
+    }
 
     override val active: Boolean = true
     override val masterUrl: URL
@@ -70,7 +75,7 @@ abstract class ActiveContext<N : HasMetadata, C : KubernetesClient>(
     protected abstract val namespaceKind : ResourceKind<N>
 
     private val extensionName: ExtensionPointName<IResourceOperatorFactory<HasMetadata, KubernetesClient, IResourceOperator<HasMetadata>>> =
-            ExtensionPointName.create("com.redhat.devtools.intellij.kubernetes.resourceOperators")
+            ExtensionPointName("com.redhat.devtools.intellij.kubernetes.resourceOperators")
 
     protected open val nonNamespacedOperators: MutableMap<ResourceKind<out HasMetadata>, INonNamespacedResourceOperator<*, *>> by lazy {
         getAllResourceOperators(INonNamespacedResourceOperator::class.java)
@@ -94,8 +99,8 @@ abstract class ActiveContext<N : HasMetadata, C : KubernetesClient>(
             @Suppress("UNCHECKED_CAST")
             val namespacesOperator: INonNamespacedResourceOperator<N, C> =
                 nonNamespacedOperators[namespaceKind] as INonNamespacedResourceOperator<N, C>
-            val namespace = getCurrentNamespace(namespacesOperator.allResources)
-            setCurrentNamespace(namespace?.metadata?.name, operators)
+            val namespace = getCurrentNamespace()
+            setCurrentNamespace(namespace, operators)
             watch(namespacesOperator) // always watch namespaces
         } catch (e: KubernetesClientException) {
             logger<ActiveContext<*, *>>().info("Could not set current namespace to all non namespaced operators.", e)
@@ -110,30 +115,25 @@ abstract class ActiveContext<N : HasMetadata, C : KubernetesClient>(
     }
 
     override fun getCurrentNamespace(): String? {
-        return try {
-            val current = getCurrentNamespace(getAllResources(namespaceKind, NO_NAMESPACE))
-            current?.metadata?.name
-        } catch (e: KubernetesClientException) {
-            throw ResourceException(
-                "Could not get current namespace for server $masterUrl", e
-            )
+        val current = client.namespace
+        return if (!current.isNullOrEmpty()) {
+            current
+        } else {
+            return try {
+                val allNamespaces = getAllResources(namespaceKind, NO_NAMESPACE)
+                val namespace =
+                    allNamespaces.find { namespace: HasMetadata -> DEFAULT_NAMESPACE == namespace.metadata.name }
+                        ?: allNamespaces.firstOrNull()
+                namespace?.metadata?.name
+            } catch (e: ResourceException) {
+                logger<ActiveContext<*,*>>().warn("Could not list all namespaces to use 1st as current namespace.", e)
+                null
+            }
         }
-    }
-
-    private fun getCurrentNamespace(namespaces: Collection<N>): N? {
-        val name: String = client.namespace ?: return null
-        return namespaces.find { name == it.metadata?.name }
     }
 
     override fun isCurrentNamespace(resource: HasMetadata): Boolean {
-        return try {
-            val current = getCurrentNamespace(getAllResources(namespaceKind, NO_NAMESPACE)) ?: return false
-            resource.isSameResource(current as HasMetadata)
-        } catch (e: KubernetesClientException) {
-            throw ResourceException(
-                "Could not get current namespace for server $masterUrl", e
-            )
-        }
+        return getCurrentNamespace() == resource.metadata?.name
     }
 
     override fun isCurrentNamespace(namespace: String): Boolean {
@@ -264,6 +264,10 @@ abstract class ActiveContext<N : HasMetadata, C : KubernetesClient>(
 
     override fun get(resource: HasMetadata): HasMetadata? {
         return singleResourceOperator.get(resource)
+    }
+
+    override fun create(resource: HasMetadata): HasMetadata? {
+        return singleResourceOperator.create(resource)
     }
 
     override fun replace(resource: HasMetadata): HasMetadata? {
@@ -441,14 +445,14 @@ abstract class ActiveContext<N : HasMetadata, C : KubernetesClient>(
                 .filter { it.namespace == namespace }
     }
 
-    override fun delete(resources: List<HasMetadata>) {
+    override fun delete(resources: List<HasMetadata>, force: Boolean) {
         logger<ActiveContext<*, *>>().debug("Deleting ${toMessage(resources)}.")
         val exceptions = resources
             .distinct()
             .groupBy { Pair(ResourceKind.create(it), ResourcesIn.valueOf(it, getCurrentNamespace())) }
             .mapNotNull {
                 try {
-                    delete(it.key.first, it.key.second, it.value)
+                    delete(it.key.first, it.key.second, it.value, force)
                     modelChange.fireModified(it.value)
                     null
                 } catch (e: KubernetesClientException) {
@@ -461,7 +465,7 @@ abstract class ActiveContext<N : HasMetadata, C : KubernetesClient>(
         }
     }
 
-    private fun delete(kind: ResourceKind<out HasMetadata>, scope: ResourcesIn, resources: List<HasMetadata>): Collection<HasMetadata> {
+    private fun delete(kind: ResourceKind<out HasMetadata>, scope: ResourcesIn, resources: List<HasMetadata>, force: Boolean): Collection<HasMetadata> {
         val operator = getOperator(kind, scope)
         if (operator == null) {
             logger<ActiveContext<*,*>>().warn(
@@ -470,7 +474,7 @@ abstract class ActiveContext<N : HasMetadata, C : KubernetesClient>(
             return emptyList()
         }
         try {
-            val deleted = operator.delete(resources)
+            val deleted = operator.delete(resources, force)
             return if (deleted) {
                 resources.forEach { setWillBeDeleted(it) }
                 resources
@@ -485,14 +489,7 @@ abstract class ActiveContext<N : HasMetadata, C : KubernetesClient>(
     override fun close() {
         logger<ActiveContext<*, *>>().debug("Closing context ${context.name}.")
         watch.close()
-    }
-
-    private inline fun <R: HasMetadata, reified O: Any> getResourceOperator(resource: R): O? {
-        val kind = ResourceKind.create(resource::class.java)
-        return getAllResourceOperators(IResourceOperator::class.java)
-            .filter {it.key == kind && it.value is O }
-            .map { it.value }
-            .firstOrNull() as O?
+        dashboard.close()
     }
 
     private fun <P: IResourceOperator<out HasMetadata>> getAllResourceOperators(type: Class<P>)

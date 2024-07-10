@@ -1,32 +1,12 @@
 buildscript {
     ext.ideaVersion = ideaVersion
-    /*
-     * for more complex conversion ideaVersion -> sinceIdeaBuild
-     * see https://github.com/rhdunn/xquery-intellij-plugin/blob/master/build.gradle#L1-L47
-     */
-    def since = ideaVersion =~ /IC-20(\d\d)\.([1-3])(\.\d+)?$/
-    if (since.matches()) {
-        ext.sinceIdeaBuild = "${since.group(1)}${since.group(2)}".toInteger()
-    }
-
-    if (ext.sinceIdeaBuild >= 223) {
-        ext.kotlinVersion = kotlinVersionIdea221
-        ext.kotlinStdlib = kotlinStdlibIdea221
-        ext.java_version = "17"
-    } else if (ext.sinceIdeaBuild >= 221) {
-        ext.kotlinVersion = kotlinVersionIdea221
-        ext.kotlinStdlib = kotlinStdlibIdea221
-        ext.java_version = "11"
-    } else {
-        ext.kotlinVersion = kotlinVersion
-        ext.kotlinStdlib = kotlinStdlib
-        ext.java_version = "11"
-    }
+    ext.kotlinVersion = kotlinVersion
+    ext.java_version = "17"
 }
 
 plugins {
     id "org.jetbrains.intellij" version "${intellijPluginVersion}"
-    id "org.jetbrains.kotlin.jvm" version "${kotlinVersion}"
+    id "org.jetbrains.kotlin.jvm" version "${kotlinJvmPluginVersion}"
     id "idea"
 }
 
@@ -55,53 +35,47 @@ tasks.withType(Test) {
 
 dependencies {
     implementation(
-            "org.jetbrains.kotlin:${kotlinStdlib}:${kotlinVersion}",
             "com.redhat.devtools.intellij:intellij-common:${intellijCommonVersion}",
             "io.fabric8:kubernetes-client:${kubernetesClientVersion}",
             "io.fabric8:kubernetes-model:${kubernetesClientVersion}",
             "io.fabric8:kubernetes-model-common:${kubernetesClientVersion}",
             "io.fabric8:openshift-client:${kubernetesClientVersion}",
+            "io.fabric8:kubernetes-httpclient-okhttp:${kubernetesClientVersion}",
+            "com.fasterxml.jackson.core:jackson-core:2.17.0", /* IC-2022.3 ships 2.16.0 */
             "org.apache.commons:commons-lang3:3.12.0"
     )
     testImplementation(
             "org.assertj:assertj-core:3.22.0",
             "org.mockito:mockito-inline:4.5.1",
             "com.nhaarman.mockitokotlin2:mockito-kotlin:2.2.0",
-            "org.jetbrains.kotlin:kotlin-test-junit"
+            "org.jetbrains.kotlin:kotlin-test-junit:${kotlinVersion}"
     )
     integrationTestImplementation(
-            "com.redhat.devtools.intellij:intellij-common:1.1.0",
-            "com.redhat.devtools.intellij:intellij-common-ui-test-library:0.2.0"
+            "com.redhat.devtools.intellij:intellij-common:${intellijCommonVersion}",
+            "com.redhat.devtools.intellij:intellij-common-ui-test-library:0.3.0",
+            "org.junit.jupiter:junit-jupiter-engine:5.8.2",
+            "org.junit.jupiter:junit-jupiter-api:5.8.2",
+            "org.junit.jupiter:junit-jupiter:5.8.2",
+            "org.junit.platform:junit-platform-launcher:1.9.3",
+            "com.google.code.gson:gson:2.8.9"
     )
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(java_version)
+    }
 }
 
 configurations {
     implementation {
-        exclude group: 'org.slf4j', module: 'slf4j-api'
+        exclude group: "org.slf4j", module: "slf4j-api"
+        exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib"
     }
+
     compileOptions {
-        sourceCompatibility = 11
-        targetCompatibility = 11
-    }
-
-    compileKotlin {
-        kotlinOptions {
-            if (java_version == "17") {
-                jvmTarget = "17"
-            } else {
-                jvmTarget = "11"
-            }
-        }
-    }
-
-    compileTestKotlin {
-        kotlinOptions {
-            if (java_version == "17") {
-                jvmTarget = "17"
-            } else {
-                jvmTarget = "11"
-            }
-        }
+        sourceCompatibility = java_version
+        targetCompatibility = java_version
     }
 
     integrationTestImplementation.extendsFrom testImplementation
@@ -109,6 +83,7 @@ configurations {
 }
 
 test {
+    systemProperties["com.redhat.devtools.intellij.telemetry.mode"] = "disabled"
     afterSuite { desc, result ->
         if (!desc.parent)
             println("${result.resultType} " +
@@ -121,13 +96,13 @@ test {
 
 intellij {
     version = ideaVersion //for a full list of Jetbrains IDEA releases please see https://www.jetbrains.com/intellij-repository/releases
-    pluginName = 'Kubernetes by Red Hat'
-    plugins = ['yaml', 'com.redhat.devtools.intellij.telemetry:0.0.3.33' ]
+    pluginName = "Kubernetes by Red Hat"
+    plugins = ["yaml", "com.redhat.devtools.intellij.telemetry:${telemetryPluginVersion}" ]
     updateSinceUntilBuild = false
 }
 
 runIde {
-    systemProperties['com.redhat.devtools.intellij.telemetry.mode'] = 'debug'
+    systemProperties["com.redhat.devtools.intellij.telemetry.mode"] = "debug"
 }
 
 patchPluginXml {
@@ -145,7 +120,7 @@ publishPlugin {
 
 runIdeForUiTests {
     systemProperty "robot-server.port", System.getProperty("robot-server.port")
-    systemProperties['com.redhat.devtools.intellij.telemetry.mode'] = 'debug'
+    systemProperties["com.redhat.devtools.intellij.telemetry.mode"] = "disabled"
 }
 
 task generateSchemas {
@@ -165,8 +140,8 @@ task generateSchemas {
          * openapi2jsonschema -o src/main/resources/schemas/k8s.io --kubernetes --expanded --stand-alone --strict https://raw.githubusercontent.com/kubernetes/kubernetes/v1.20.5/api/openapi-spec/swagger.json
          */
         def process = exec {
-            executable 'openapi2jsonschema'
-            args '-o', destination, "--kubernetes", "--expanded", "--stand-alone", "--strict", url
+            executable "openapi2jsonschema"
+            args "-o", destination, "--kubernetes", "--expanded", "--stand-alone", "--strict", url
         }
         if (isSuccess(process.exitValue)) {
             createIndexFile("${projectDir}/${destination}")
@@ -223,14 +198,15 @@ private def colorize(String color, String message) {
 }
 
 repositories {
+    mavenLocal()
     mavenCentral()
     maven {
-        url 'https://repository.jboss.org'
+        url "https://repository.jboss.org"
     }
     maven {
-        url 'https://packages.jetbrains.team/maven/p/ij/intellij-dependencies'
+        url "https://packages.jetbrains.team/maven/p/ij/intellij-dependencies"
     }
 }
 
-group 'com.redhat.devtools.intellij'
+group "com.redhat.devtools.intellij"
 version projectVersion

@@ -8,15 +8,10 @@
  * Contributors:
  * Red Hat, Inc. - initial API and implementation
  ******************************************************************************/
-package com.redhat.devtools.intellij.kubernetes.model.resource
+package com.redhat.devtools.intellij.kubernetes.model.resource.openshift
 
 import io.fabric8.kubernetes.api.model.Pod
 import io.fabric8.kubernetes.api.model.ReplicationController
-import io.fabric8.kubernetes.api.model.Service
-import io.fabric8.kubernetes.api.model.apps.DaemonSet
-import io.fabric8.kubernetes.api.model.apps.Deployment
-import io.fabric8.kubernetes.api.model.apps.StatefulSet
-import io.fabric8.kubernetes.api.model.batch.v1.Job
 import io.fabric8.openshift.api.model.Build
 import io.fabric8.openshift.api.model.BuildConfig
 import io.fabric8.openshift.api.model.DeploymentConfig
@@ -32,14 +27,27 @@ class ReplicationControllerFor(private val dc: DeploymentConfig) : Predicate<Rep
 	}
 }
 
-class DeploymentConfigFor(rc: ReplicationController) : Predicate<DeploymentConfig> {
+class DeploymentConfigForReplicationController(rc: ReplicationController) : Predicate<DeploymentConfig> {
 
-	private val dcConfigAnnotation = "openshift.io/deployment-config.name"
-	private val dcName: String? = rc.metadata.annotations[dcConfigAnnotation]
+	private val labelKey = "openshift.io/deployment-config.name"
+	private val labelValue: String? = rc.metadata.annotations[labelKey]
 
 	override fun test(dc: DeploymentConfig): Boolean {
-		return dcName != null
-				&& dcName == dc.metadata.annotations[dcConfigAnnotation]
+		return labelValue != null
+				&& labelValue == dc.metadata.name
+	}
+}
+
+class DeploymentConfigForPod(pod: Pod) : Predicate<DeploymentConfig> {
+
+	private val versionKey = "app.kubernetes.io/version"
+	private val versionValue = pod.metadata.labels[versionKey]
+	private val nameKey = "app.kubernetes.io/name"
+	private val nameValue = pod.metadata.labels[nameKey]
+
+	override fun test(dc: DeploymentConfig): Boolean {
+		return versionValue == dc.spec?.selector?.get(versionKey)
+				&& nameValue == dc.spec?.selector?.get(nameKey)
 	}
 }
 
@@ -64,26 +72,6 @@ class BuildConfigFor(build: Build) : Predicate<BuildConfig> {
 	}
 }
 
-class PodForService(service: Service)
-	: PodForResource(service.spec.selector)
-
-class PodForDeployment(deployment: Deployment)
-	: PodForResource(deployment.spec.selector.matchLabels)
-
-class PodForStatefulSet(statefulSet: StatefulSet)
-	: PodForResource(statefulSet.spec.selector.matchLabels)
-
-class PodForDaemonSet(daemonSet: DaemonSet)
-	: PodForResource(daemonSet.spec.selector?.matchLabels)
-
-
-open class PodForResource(private val selectorLabels: Map<String, String>?): Predicate<Pod> {
-
-	override fun test(pod: Pod): Boolean {
-		return selectorLabels?.all { pod.metadata.labels?.entries?.contains(it) ?: false } ?: false
-	}
-}
-
 class PodForBuild(private val build: Build)
 	: Predicate<Pod> {
 
@@ -91,12 +79,3 @@ class PodForBuild(private val build: Build)
 		return build.metadata.name == pod.metadata?.labels?.get(BuildOperationsImpl.OPENSHIFT_IO_BUILD_NAME)
 	}
 }
-
-class PodForJob(private val job: Job)
-	: Predicate<Pod> {
-
-	override fun test(pod: Pod): Boolean {
-		return job.metadata.uid == pod.metadata?.labels?.get("controller-uid")
-	}
-}
-

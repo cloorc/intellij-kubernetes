@@ -15,7 +15,6 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.Progressive
 import com.redhat.devtools.intellij.kubernetes.telemetry.TelemetryService
 import com.redhat.devtools.intellij.kubernetes.telemetry.TelemetryService.NAME_PREFIX_NAMESPACE
-import com.redhat.devtools.intellij.kubernetes.tree.ResourceWatchController
 import io.fabric8.kubernetes.api.model.Namespace
 import javax.swing.tree.TreePath
 
@@ -27,13 +26,13 @@ class UseNamespaceAction : UseResourceAction<Namespace>(Namespace::class.java) {
         val model = getResourceModel() ?: return
         val telemetry = TelemetryService.instance
             .action(NAME_PREFIX_NAMESPACE + "switch")
-        run("Switching namespace $namespace...", true,
+        run("Switching to namespace $name...", true,
             Progressive {
                 try {
                     model.setCurrentNamespace(name)
                     telemetry.success().send()
                 } catch (e: Exception) {
-                    logger<ResourceWatchController>().warn(
+                    logger<UseNamespaceAction>().warn(
                         "Could not use namespace ${name}.", e
                     )
                     telemetry.error(e).send()

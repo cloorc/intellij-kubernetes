@@ -12,6 +12,7 @@ package com.redhat.devtools.intellij.kubernetes.editor.actions
 
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.Progressive
 import com.redhat.devtools.intellij.kubernetes.editor.ResourceEditorFactory
 import com.redhat.devtools.intellij.kubernetes.editor.util.getSelectedFileEditor
@@ -33,8 +34,9 @@ class RemoveClutterAction: AnAction() {
                 try {
                     val editor = ResourceEditorFactory.instance.getExistingOrCreate(fileEditor, project) ?: return@Progressive
                     editor.removeClutter()
-                    TelemetryService.sendTelemetry(editor.editorResource.get(), telemetry)
+                    TelemetryService.sendTelemetry(editor.getResources(), telemetry)
                 } catch (e: Exception) {
+                    logger<RemoveClutterAction>().warn("Could not remove clutter resource to cluster: ${e.message}", e)
                     Notification().error("Error removing metadata clutter", "Could not remove metadata clutter: ${e.message}")
                     telemetry.error(e).send()
                 }

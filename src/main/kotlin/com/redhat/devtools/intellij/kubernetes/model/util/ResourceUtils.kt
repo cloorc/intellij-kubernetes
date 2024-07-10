@@ -10,22 +10,19 @@
  ******************************************************************************/
 package com.redhat.devtools.intellij.kubernetes.model.util
 
-import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.diagnostic.Logger
 import io.fabric8.kubernetes.api.model.HasMetadata
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinitionSpec
 import io.fabric8.kubernetes.client.utils.ApiVersionUtil
 import io.fabric8.kubernetes.client.utils.KubernetesVersionPriority
 import io.fabric8.kubernetes.client.utils.Serialization
-import io.fabric8.kubernetes.model.annotation.Group
-import io.fabric8.kubernetes.model.annotation.Version
-import io.fabric8.kubernetes.model.util.Helper
 import java.util.stream.Collectors
 
 const val MARKER_WILL_BE_DELETED = "willBeDeleted"
 const val API_GROUP_VERSION_DELIMITER = '/'
 
 /**
- * returns `true` if the given resource has the same
+ * Returns `true` if the given resource has the same
  * - kind
  * - apiVersion
  * - name
@@ -128,13 +125,13 @@ fun String.isGreaterIntThan(other: String?): Boolean {
  * @see io.fabric8.kubernetes.model.annotation.Group (annotation)
  */
 fun getApiVersion(clazz: Class<out HasMetadata>): String {
-	val apiVersion = Helper.getAnnotationValue(clazz, Version::class.java)
-	return if (!apiVersion.isNullOrBlank()) {
-		val apiGroup = Helper.getAnnotationValue(clazz, Group::class.java)
-		if (!apiGroup.isNullOrBlank()) {
-			getApiVersion(apiGroup, apiVersion)
+	val version = HasMetadata.getVersion(clazz)
+	return if (!version.isNullOrBlank()) {
+		val group = HasMetadata.getGroup(clazz)
+		if (!group.isNullOrBlank()) {
+			getApiVersion(group, version)
 		} else {
-			apiVersion
+			version
 		}
 	} else {
 		clazz.simpleName
@@ -173,6 +170,10 @@ fun setDeletionTimestamp(timestamp: String, resource: HasMetadata) {
 
 fun hasDeletionTimestamp(resource: HasMetadata?): Boolean {
 	return null != resource?.metadata?.deletionTimestamp
+}
+
+fun hasManagedFields(resource: HasMetadata?): Boolean {
+	return true == resource?.metadata?.managedFields?.isNotEmpty()
 }
 
 fun setWillBeDeleted(resource: HasMetadata) {
@@ -244,7 +245,7 @@ fun getHighestPriorityVersion(spec: CustomResourceDefinitionSpec): String? {
 	val versions = spec.versions.map { it.name }
 	val version = KubernetesVersionPriority.highestPriority(versions)
 	if (version == null) {
-		logger<CustomResourceDefinitionSpec>().warn(
+		Logger.getInstance("ResourceUtils").warn(
 			"Could not find version with highest priority in ${spec.group}/${spec.names.kind}."
 		)
 	}
@@ -257,7 +258,7 @@ fun getHighestPriorityVersion(spec: CustomResourceDefinitionSpec): String? {
  * @param jsonYaml the string that should be unmarshalled
  * @return the instance of the given type
  */
-inline fun <reified T> createResource(jsonYaml: String): T {
+inline fun <reified T: HasMetadata> createResource(jsonYaml: String): T {
 	return Serialization.unmarshal(jsonYaml, T::class.java)
 }
 
@@ -276,6 +277,16 @@ fun <R: HasMetadata?> runWithoutServerSetProperties(resource: R, operation: () -
 	return value
 }
 
+/**
+ * Runs the given operation removing the server set properties from given [thisResource] and [thatResource].
+ * Returns the result of the given operation.
+ *
+ * The following properties are set to `null` and restored once the operation was run:
+ * * [io.fabric8.kubernetes.api.model.ObjectMeta.resourceVersion]
+ * * [io.fabric8.kubernetes.api.model.ObjectMeta.uid]
+ *
+ * @return true if the resource is not equal to the same resource on the cluster
+ */
 fun <T: HasMetadata?, R: Any?> runWithoutServerSetProperties(thisResource: T?, thatResource: T?, operation: () -> R): R {
 	// remove properties
 	val thisResourceVersion = removeResourceVersion(thisResource)
@@ -343,4 +354,66 @@ fun <R: HasMetadata> hasGenerateName(resource: R): Boolean {
  */
 fun <R: HasMetadata> hasName(resource: R): Boolean {
 	return true == resource.metadata.name?.isNotEmpty()
+}
+
+/**
+ * Return `true` if the name of the given resource starts with the given value.
+ * Returns `false` otherwise.
+ *
+ * @param startsWith the string that the name should start with
+ * @param resource the resource whose name should start with the given value
+ * @return `true` if the name of the resource starts with the given value
+ */
+fun <R: HasMetadata> nameStartsWith(startsWith: String, resource: R): Boolean {
+	return resource.metadata?.name?.startsWith(startsWith) ?: false
+}
+
+/**
+ * Returns a string stating kinds and names for the given resources.
+ *
+ * ex. 'Pod luke skywalker, Deployment rebel base'
+ */
+fun toNames(resources: Collection<HasMetadata>?): String? {
+	return toString(::toName, resources)
+}
+
+fun toKindAndNames(resources: Collection<HasMetadata>?): String? {
+	return toString(::toKindAndName, resources)
+}
+
+fun toString(toString: (resource: HasMetadata) -> String, resources: Collection<HasMetadata>?): String? {
+	if (resources == null) {
+		return null
+	}
+	return if (resources.isEmpty()) {
+		return null
+	} else {
+		resources.joinToString { resource ->
+			toString.invoke(resource)
+		}
+	}
+}
+
+/**
+ * Returns `true` if the 2 given resources are equal. Returns `false` otherwise.
+ * The following properties are not taken into account:
+ * * [io.fabric8.kubernetes.api.model.ObjectMeta.resourceVersion]
+ * * [io.fabric8.kubernetes.api.model.ObjectMeta.uid]
+ *
+ * @return true if the first given resource is equal to second one
+ */
+fun areEqual(thisResource: HasMetadata?, thatResource: HasMetadata?): Boolean {
+	return runWithoutServerSetProperties(thisResource, thatResource) {
+		thisResource == thatResource
+	}
+}
+
+private fun toName(resource: HasMetadata) =
+	resource.metadata.name ?: resource.metadata.generateName
+
+fun toKindAndName(resource: HasMetadata) =
+	"${resource.kind} '${resource.metadata.name ?: resource.metadata.generateName}'"
+
+fun <R: HasMetadata> hasLabel(value: String, label: String, resource: R): Boolean {
+	return value == resource.metadata?.labels?.get(label)
 }

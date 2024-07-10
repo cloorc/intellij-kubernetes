@@ -10,13 +10,25 @@
  ******************************************************************************/
 package com.redhat.devtools.intellij.kubernetes.model.client
 
-import io.fabric8.kubernetes.client.*
+import com.redhat.devtools.intellij.common.kubernetes.ClusterHelper
+import com.redhat.devtools.intellij.common.ssl.IDEATrustManager
+import io.fabric8.kubernetes.client.Client
+import io.fabric8.kubernetes.client.Config
+import io.fabric8.kubernetes.client.KubernetesClient
+import io.fabric8.kubernetes.client.KubernetesClientBuilder
+import io.fabric8.kubernetes.client.http.HttpClient
+import io.fabric8.kubernetes.client.impl.AppsAPIGroupClient
+import io.fabric8.kubernetes.client.impl.BatchAPIGroupClient
+import io.fabric8.kubernetes.client.impl.NetworkAPIGroupClient
+import io.fabric8.kubernetes.client.impl.StorageAPIGroupClient
+import io.fabric8.kubernetes.client.internal.SSLUtils
 import io.fabric8.openshift.client.NamespacedOpenShiftClient
 import io.fabric8.openshift.client.OpenShiftClient
-import io.fabric8.openshift.client.OpenShiftNotAvailableException
 import java.util.concurrent.ConcurrentHashMap
+import javax.net.ssl.X509ExtendedTrustManager
+import javax.net.ssl.X509TrustManager
 
-open class OSClientAdapter(client: NamespacedOpenShiftClient, private val kubeClient: NamespacedKubernetesClient) :
+open class OSClientAdapter(client: OpenShiftClient, private val kubeClient: KubernetesClient) :
     ClientAdapter<OpenShiftClient>(client) {
 
     override val config by lazy {
@@ -34,34 +46,66 @@ open class OSClientAdapter(client: NamespacedOpenShiftClient, private val kubeCl
     }
 }
 
-open class KubeClientAdapter(client: NamespacedKubernetesClient) :
-    ClientAdapter<NamespacedKubernetesClient>(client) {
+open class KubeClientAdapter(client: KubernetesClient) :
+    ClientAdapter<KubernetesClient>(client) {
     override fun isOpenShift(): Boolean {
         return false
     }
 }
 
-abstract class ClientAdapter<C: KubernetesClient>(private val fabric8Client: C) {
+abstract class ClientAdapter<C : KubernetesClient>(private val fabric8Client: C) {
 
     companion object Factory {
-        fun create(namespace: String? = null, context: String? = null): ClientAdapter<out KubernetesClient> {
-            return create(namespace, Config.autoConfigure(context))
+        fun create(
+            namespace: String? = null,
+            context: String? = null,
+            clientBuilder: KubernetesClientBuilder = KubernetesClientBuilder(),
+            trustManagerProvider: ((toIntegrate: List<X509ExtendedTrustManager>) -> X509TrustManager)
+            = IDEATrustManager()::configure
+        ): ClientAdapter<out KubernetesClient> {
+            val config = Config.autoConfigure(context)
+            return create(namespace, config, clientBuilder, trustManagerProvider)
         }
 
-        fun create(namespace: String? = null, config: Config): ClientAdapter<out KubernetesClient> {
+        fun create(
+            namespace: String? = null,
+            config: Config,
+            clientBuilder: KubernetesClientBuilder,
+            externalTrustManagerProvider: (toIntegrate: List<X509ExtendedTrustManager>) -> X509TrustManager
+            = IDEATrustManager()::configure
+        ): ClientAdapter<out KubernetesClient> {
             setNamespace(namespace, config)
-            val kubeClient = DefaultKubernetesClient(config)
-            return try {
+            val kubeClient = clientBuilder
+                .withConfig(config)
+                .withHttpClientBuilderConsumer { builder ->
+                    setSslContext(builder, config, externalTrustManagerProvider)
+                }
+                .build()
+            return if (isOpenShift(kubeClient)) {
                 val osClient = kubeClient.adapt(NamespacedOpenShiftClient::class.java)
                 OSClientAdapter(osClient, kubeClient)
-            } catch (e: RuntimeException) {
-                when (e) {
-                    is KubernetesClientException, // unauthorized openshift
-                    is OpenShiftNotAvailableException ->
-                        KubeClientAdapter(kubeClient)
-                    else -> throw e
-                }
+            } else {
+                KubeClientAdapter(kubeClient)
             }
+        }
+
+        private fun isOpenShift(client: KubernetesClient): Boolean {
+            return try {
+                ClusterHelper.isOpenShift(client)
+            } catch (e: Exception) {
+                false;
+            }
+        }
+
+        private fun setSslContext(
+            builder: HttpClient.Builder,
+            config: Config,
+            externalTrustManagerProvider: (toIntegrate: List<X509ExtendedTrustManager>) -> X509TrustManager
+        ) {
+            val clientTrustManagers = SSLUtils.trustManagers(config)
+                .filterIsInstance<X509ExtendedTrustManager>()
+            val externalTrustManager = externalTrustManagerProvider.invoke(clientTrustManagers)
+            builder.sslContext(SSLUtils.keyManagers(config), arrayOf(externalTrustManager))
         }
 
         private fun setNamespace(namespace: String?, config: Config) {

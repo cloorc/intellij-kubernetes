@@ -23,11 +23,13 @@ import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.client
 import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.customResource
 import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.namespacedCustomResourceOperation
 import com.redhat.devtools.intellij.kubernetes.model.resource.ResourceKind
+import io.fabric8.kubernetes.api.model.GenericKubernetesResource
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinitionBuilder
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinitionNamesBuilder
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinitionSpecBuilder
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinitionVersionBuilder
+import io.fabric8.kubernetes.client.Watcher
 import io.fabric8.kubernetes.client.dsl.base.CustomResourceDefinitionContext
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Test
@@ -59,7 +61,7 @@ class NamespacedCustomResourceOperatorTest {
     private val kind = ResourceKind.create(spec)!!
     private val customResource = customResource("Ezra", "Endor", definition)
     private val resources = listOf(customResource)
-    private val op = namespacedCustomResourceOperation(customResource, resources, mock())
+    private val op = namespacedCustomResourceOperation(resources, mock())
     private val client = client(currentNamespace, arrayOf(NAMESPACE1, NAMESPACE2, NAMESPACE3)).apply {
         doReturn(op)
             .whenever(this).genericKubernetesResources(any())
@@ -150,7 +152,7 @@ class NamespacedCustomResourceOperatorTest {
         val namespaceUsed = ArgumentCaptor.forClass(String::class.java)
         assertThat(operator.namespace).isNotEqualTo(customResource.metadata.namespace)
         // when
-        operator.delete(listOf(customResource))
+        operator.delete(listOf(customResource), false)
         // then
         verify(op).inNamespace(namespaceUsed.capture())
         assertThat(namespaceUsed.value).isEqualTo(customResource.metadata.namespace)
@@ -164,9 +166,57 @@ class NamespacedCustomResourceOperatorTest {
         assertThat(operator.namespace).isNotNull()
         val namespaceUsed = ArgumentCaptor.forClass(String::class.java)
         // when
-        operator.delete(listOf(noNamespace))
+        operator.delete(listOf(noNamespace), false)
         // then
         verify(op).inNamespace(namespaceUsed.capture())
         assertThat(namespaceUsed.value).isEqualTo(operator.namespace)
     }
+
+    @Test
+    fun `#watchAll() is calling #inNamespace()#watch()`() {
+        // given
+        val watcher: Watcher<GenericKubernetesResource> = mock()
+        // when
+        operator.watchAll(watcher)
+        // then should not call inNamespace().withName(), only inNamespace()
+        verify(op.inNamespace(currentNamespace))
+            .watch(watcher)
+    }
+
+    @Test
+    fun `#watch() is calling #inNamespace()#withName()#watch()`() {
+        // given
+        val watcher: Watcher<GenericKubernetesResource> = mock()
+        // when
+        operator.watch(customResource, watcher)
+        // then should inNamespace().withName().watch()
+        verify(op.inNamespace(currentNamespace).withName(customResource.metadata.name))
+            .watch(watcher)
+    }
+
+    @Test
+    fun `#watch(namespace) is using operator namespace if resource has no namespace`() {
+        // given
+        val noNamespace = customResource("Luke Skywalker", null, definition)
+        assertThat(noNamespace.metadata.namespace).isNull()
+        assertThat(operator.namespace).isNotNull()
+        val namespaceUsed = ArgumentCaptor.forClass(String::class.java)
+        // when
+        operator.watch(noNamespace, mock())
+        // then
+        verify(op).inNamespace(namespaceUsed.capture())
+        assertThat(namespaceUsed.value).isEqualTo(operator.namespace)
+    }
+
+    @Test
+    fun `#watch(namespace) is using resource namespace if resource has namespace`() {
+        // given
+        val namespaceUsed = ArgumentCaptor.forClass(String::class.java)
+        // when
+        operator.watch(customResource, mock())
+        // then
+        verify(op).inNamespace(namespaceUsed.capture())
+        assertThat(namespaceUsed.value).isEqualTo(customResource.metadata.namespace)
+    }
+
 }

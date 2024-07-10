@@ -28,10 +28,13 @@ import com.redhat.devtools.intellij.kubernetes.telemetry.TelemetryService.PROP_I
 import com.redhat.devtools.intellij.kubernetes.telemetry.TelemetryService.PROP_KUBERNETES_VERSION
 import com.redhat.devtools.intellij.kubernetes.telemetry.TelemetryService.PROP_OPENSHIFT_VERSION
 import io.fabric8.kubernetes.api.model.HasMetadata
-import io.fabric8.kubernetes.api.model.NamedContext
-import io.fabric8.kubernetes.api.model.NamedContextBuilder
+import io.fabric8.kubernetes.client.Config
 import io.fabric8.kubernetes.client.KubernetesClient
 import java.nio.file.Paths
+import java.util.concurrent.CompletionException
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 
 interface IAllContexts {
 	/**
@@ -76,37 +79,49 @@ open class AllContexts(
 	private val contextFactory: (ClientAdapter<out KubernetesClient>, IResourceModelObservable) -> IActiveContext<out HasMetadata, out KubernetesClient>? =
 		IActiveContext.Factory::create,
 	private val modelChange: IResourceModelObservable,
-	private val clientFactory: (String?, String?) -> ClientAdapter<out KubernetesClient> = ClientAdapter.Factory::create
+	private val clientFactory: (
+		namespace: String?,
+		context: String?
+	) -> ClientAdapter<out KubernetesClient>
+	= { namespace, context -> ClientAdapter.Factory.create(namespace, context) }
 ) : IAllContexts {
 
 	init {
 		watchKubeConfig()
 	}
 
+	private val lock = ReentrantReadWriteLock()
+
 	private val client = ResettableLazyProperty {
-		clientFactory.invoke(null,null)
+		lock.write {
+			clientFactory.invoke(null, null)
+		}
 	}
 
 	override val current: IActiveContext<out HasMetadata, out KubernetesClient>?
 		get() {
-			synchronized(this) {
-				return findActive(all)
-			}
+			return findActive(all)
 		}
 
-	override val all: MutableList<IContext> = mutableListOf()
+	private val _all: MutableList<IContext> = mutableListOf()
+
+	override val all: List<IContext>
 		get() {
-			synchronized(this) {
-				if (field.isEmpty()) {
+			lock.write {
+				if (_all.isEmpty()) {
 					val all = createContexts(client.get(), client.get()?.config)
-					field.addAll(all)
+						_all.addAll(all)
 				}
-				return field
+				return _all
 			}
 		}
 
 	override fun setCurrentContext(context: IContext): IActiveContext<out HasMetadata, out KubernetesClient>? {
-		val new = setCurrentContext(context, current, emptyList())
+		if (current == context) {
+			return current
+		}
+		val newClient = clientFactory.invoke(context.context.context.namespace, context.context.name)
+		val new = setCurrentContext(newClient, emptyList())
 		if (new != null) {
 			modelChange.fireAllContextsChanged()
 		}
@@ -115,46 +130,46 @@ open class AllContexts(
 
 	override fun setCurrentNamespace(namespace: String): IActiveContext<out HasMetadata, out KubernetesClient>? {
 		val old = this.current ?: return null
-		val context = NamedContextBuilder(old.context).build()
-		context.context.namespace = namespace
-		val new = setCurrentContext(Context(context), old, old.getWatched())
-		modelChange.fireCurrentNamespaceChanged(new, old)
+		val newClient = clientFactory.invoke(namespace, old.context.name)
+		val new = setCurrentContext(newClient, old.getWatched())
+		if (new != null) {
+			modelChange.fireCurrentNamespaceChanged(new, old)
+		}
 		return new
 	}
 
 	private fun setCurrentContext(
-		toSet: IContext,
-		current: IActiveContext<out HasMetadata, out KubernetesClient>?,
-		toWatch: Collection<ResourceKind<out HasMetadata>>?
+		newClient: ClientAdapter<out KubernetesClient>,
+		toWatch: Collection<ResourceKind<out HasMetadata>>?,
 	) : IActiveContext<out HasMetadata, out KubernetesClient>? {
-		synchronized(this) {
-			if (toSet == current) {
-				return current
+		lock.write {
+			try {
+				replaceClient(newClient, this.client.get())
+				newClient.config.save().join()
+				current?.close()
+				clearAllContexts() // causes reload of all contexts when accessed afterwards
+				val newCurrent = current // gets new current from all
+				if (toWatch != null) {
+					newCurrent?.watchAll(toWatch)
+				}
+				return newCurrent
+			} catch (e: CompletionException) {
+				val cause = e.cause ?: throw e
+				throw cause
 			}
-			if (!exists(toSet, all)) {
-				return null
-			}
-			recreateClient(
-				toSet.context.context.namespace,
-				toSet.context.name,
-				client.get()
-			)
-			current?.close()
-			all.clear() // causes reload of all contexts when accessed afterwards
-			val newCurrent = this.current // gets new current from all
-			if (toWatch != null) {
-				newCurrent?.watchAll(toWatch)
-			}
-			return newCurrent
 		}
 	}
 
+	private fun clearAllContexts() {
+		_all.clear()
+	}
+
 	override fun refresh() {
-		synchronized(this) {
+		lock.write {
 			this.current?.close()
-			all.clear() // latter access will cause reload
-			modelChange.fireAllContextsChanged()
+			clearAllContexts() // latter access will cause reload
 		}
+		modelChange.fireAllContextsChanged()
 	}
 
 	private fun findActive(all: List<IContext>): IActiveContext<out HasMetadata, out KubernetesClient>? {
@@ -173,21 +188,21 @@ open class AllContexts(
 		) {
 			return emptyList()
 		}
-		return config.allContexts
-			.map {
-				if (config.isCurrent(it)) {
-					createActiveContext(client) ?: Context(it)
-				} else {
-					Context(it)
+		lock.read {
+			return config.allContexts
+				.map {
+					if (config.isCurrent(it)) {
+						createActiveContext(client) ?: Context(it)
+					} else {
+						Context(it)
+					}
 				}
-			}
+		}
 	}
 
-	private fun recreateClient(namespace: String?, context: String?, client: ClientAdapter<out KubernetesClient>?)
+	private fun replaceClient(new: ClientAdapter<out KubernetesClient>, old: ClientAdapter<out KubernetesClient>?)
 			: ClientAdapter<out KubernetesClient> {
-		client?.close()
-		val new = clientFactory.invoke(namespace, context)
-		new.config.save()
+		old?.close()
 		this.client.set(new)
 		return new
 	}
@@ -222,27 +237,8 @@ open class AllContexts(
 		}
 	}
 
-	private fun exists(context: IContext, all: MutableList<IContext>): Boolean {
-		return find(context, all) != null
-	}
-
-	private fun find(context: IContext, all: MutableList<IContext>): IContext? {
-		val found = all.find { sameButNamespace(context.context, it.context) } ?: return null
-		val indexOf = all.indexOf(found)
-		if (indexOf < 0) {
-			return null
-		}
-		return all[indexOf]
-	}
-
-	private fun sameButNamespace(toFind: NamedContext, toCheck: NamedContext): Boolean {
-		return toFind.name == toCheck.name
-				&& toFind.context.cluster == toCheck.context.cluster
-				&& toFind.context.user == toCheck.context.user
-	}
-
 	protected open fun watchKubeConfig() {
-		val path = Paths.get(ConfigHelper.getKubeConfigPath())
+		val path = Paths.get(Config.getKubeconfigFilename())
 		/**
 		 * [ConfigWatcher] cannot add/remove listeners nor can it get closed (and stop the [java.nio.file.WatchService]).
 		 * We therefore have to create a single instance in here rather than using it in a shielded/private way within
@@ -251,18 +247,21 @@ open class AllContexts(
 		 * The latter gets closed/recreated whenever the context changes in
 		 * [com.redhat.devtools.intellij.kubernetes.model.client.KubeConfigAdapter].
 		 */
-		val watcher = ConfigWatcher(path) { _, config -> onKubeConfigChanged(config) }
+		val watcher = ConfigWatcher(path) { _, config: io.fabric8.kubernetes.api.model.Config? -> onKubeConfigChanged(config) }
 		runAsync(watcher::run)
 	}
 
-	protected open fun onKubeConfigChanged(fileConfig: io.fabric8.kubernetes.api.model.Config) {
-		val client = client.get() ?: return
-		val clientConfig = client.config.configuration
-		if (ConfigHelper.areEqual(fileConfig, clientConfig)) {
-			return
+	protected open fun onKubeConfigChanged(fileConfig: io.fabric8.kubernetes.api.model.Config?) {
+		lock.read {
+			fileConfig ?: return
+			val client = client.get() ?: return
+			val clientConfig = client.config.configuration
+			if (ConfigHelper.areEqual(fileConfig, clientConfig)) {
+				return
+			}
+			this.client.reset() // create new client when accessed
+			client.close()
 		}
-		client.close()
-		this.client.reset() // create new client when accessed
 		refresh()
 	}
 

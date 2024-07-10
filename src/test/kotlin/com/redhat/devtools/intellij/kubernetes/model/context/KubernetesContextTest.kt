@@ -10,24 +10,14 @@
  ******************************************************************************/
 package com.redhat.devtools.intellij.kubernetes.model.context
 
-import com.nhaarman.mockitokotlin2.any
-import com.nhaarman.mockitokotlin2.argThat
-import com.nhaarman.mockitokotlin2.atLeastOnce
-import com.nhaarman.mockitokotlin2.clearInvocations
-import com.nhaarman.mockitokotlin2.doReturn
-import com.nhaarman.mockitokotlin2.eq
-import com.nhaarman.mockitokotlin2.mock
-import com.nhaarman.mockitokotlin2.never
-import com.nhaarman.mockitokotlin2.spy
-import com.nhaarman.mockitokotlin2.times
-import com.nhaarman.mockitokotlin2.verify
-import com.nhaarman.mockitokotlin2.whenever
+import com.nhaarman.mockitokotlin2.*
 import com.redhat.devtools.intellij.kubernetes.model.Notification
 import com.redhat.devtools.intellij.kubernetes.model.ResourceModelObservable
 import com.redhat.devtools.intellij.kubernetes.model.ResourceWatch
 import com.redhat.devtools.intellij.kubernetes.model.client.ClientAdapter
 import com.redhat.devtools.intellij.kubernetes.model.client.KubeClientAdapter
 import com.redhat.devtools.intellij.kubernetes.model.context.IActiveContext.ResourcesIn
+import com.redhat.devtools.intellij.kubernetes.model.dashboard.IDashboard
 import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.NAMESPACE1
 import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.NAMESPACE2
 import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.NAMESPACE3
@@ -37,6 +27,7 @@ import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.POD3
 import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.client
 import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.customResource
 import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.customResourceDefinition
+import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.namedContext
 import com.redhat.devtools.intellij.kubernetes.model.mocks.ClientMocks.resource
 import com.redhat.devtools.intellij.kubernetes.model.mocks.Mocks.namespacedResourceOperator
 import com.redhat.devtools.intellij.kubernetes.model.mocks.Mocks.nonNamespacedResourceOperator
@@ -44,19 +35,10 @@ import com.redhat.devtools.intellij.kubernetes.model.resource.INamespacedResourc
 import com.redhat.devtools.intellij.kubernetes.model.resource.INonNamespacedResourceOperator
 import com.redhat.devtools.intellij.kubernetes.model.resource.IResourceOperator
 import com.redhat.devtools.intellij.kubernetes.model.resource.ResourceKind
-import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.AllPodsOperator
-import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.NamespacedPodsOperator
-import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.NamespacesOperator
-import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.NodesOperator
-import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.ServicesOperator
+import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.*
 import com.redhat.devtools.intellij.kubernetes.model.util.MultiResourceException
 import com.redhat.devtools.intellij.kubernetes.model.util.ResourceException
-import io.fabric8.kubernetes.api.model.GenericKubernetesResource
-import io.fabric8.kubernetes.api.model.HasMetadata
-import io.fabric8.kubernetes.api.model.NamedContext
-import io.fabric8.kubernetes.api.model.Namespace
-import io.fabric8.kubernetes.api.model.Node
-import io.fabric8.kubernetes.api.model.Pod
+import io.fabric8.kubernetes.api.model.*
 import io.fabric8.kubernetes.api.model.apiextensions.v1.CustomResourceDefinition
 import io.fabric8.kubernetes.client.KubernetesClient
 import io.fabric8.kubernetes.client.NamespacedKubernetesClient
@@ -69,8 +51,10 @@ import org.junit.Test
 
 class KubernetesContextTest {
 
+	private val DEFAULT_NAMESPACE = resource<Namespace>("default", null, "defaultNsUid1", "v1", "1")
+
 	private val modelChange: ResourceModelObservable = mock()
-	private val allNamespaces = arrayOf(NAMESPACE1, NAMESPACE2, NAMESPACE3)
+	private val allNamespaces = arrayOf(NAMESPACE1, NAMESPACE2, DEFAULT_NAMESPACE, NAMESPACE3)
 	private val currentNamespace = NAMESPACE2
 	private val client = KubeClientAdapter(client(currentNamespace.metadata.name, allNamespaces))
 	private val namespaceWatchOperation: (watcher: Watcher<in Namespace>) -> Watch? = { null }
@@ -181,7 +165,7 @@ class KubernetesContextTest {
 	private fun createContext(internalResourcesOperators: List<IResourceOperator<*>>, extensionResourceOperators: List<IResourceOperator<*>>): TestableKubernetesContext {
 		return spy(
 			TestableKubernetesContext(
-				mock(),
+				namedContext("death star"),
 				modelChange,
 				this@KubernetesContextTest.client,
 				internalResourcesOperators,
@@ -203,22 +187,37 @@ class KubernetesContextTest {
 	}
 
 	@Test
-	fun `#getCurrentNamespace should use null if no namespace set in client`() {
+	fun `#getCurrentNamespace should return 'default' namespace if no current namespace set in client`() {
 		// given
 		whenever(client.get().namespace)
 				.thenReturn(null)
 		// when
 		val namespace = context.getCurrentNamespace()
 		// then
-		assertThat(namespace).isNull()
+		assertThat(namespace).isEqualTo(DEFAULT_NAMESPACE.metadata.name)
 	}
 
 	@Test
-	fun `#getCurrentNamespace should return null if current namespace is set but doesnt exist`() {
+	fun `#getCurrentNamespace should return 1st namespace if no current namespace set in client and there's no 'default' namespace`() {
 		// given
+		val allNamespaces = arrayOf(NAMESPACE1, NAMESPACE2, NAMESPACE3)
+		whenever(namespacesOperator.allResources)
+			.thenReturn(allNamespaces.asList())
 		whenever(client.get().namespace)
-				.thenReturn("inexistent")
+			.thenReturn(null)
+		// when
+		val namespace = context.getCurrentNamespace()
+		// then
+		assertThat(namespace).isEqualTo(NAMESPACE1.metadata.name)
+	}
 
+	@Test
+	fun `#getCurrentNamespace should return null if no current namespace set in client and there are no namespaces`() {
+		// given
+		whenever(namespacesOperator.allResources)
+			.thenReturn(emptyList())
+		whenever(client.get().namespace)
+			.thenReturn(null)
 		// when
 		val namespace = context.getCurrentNamespace()
 		// then
@@ -335,9 +334,19 @@ class KubernetesContextTest {
 		// given
 		val toDelete = listOf(POD2)
 		// when
-		context.delete(toDelete)
+		context.delete(toDelete, false)
 		// then
-		verify(namespacedPodsOperator).delete(toDelete)
+		verify(namespacedPodsOperator).delete(toDelete, false)
+	}
+
+	@Test
+	fun `#delete should call operator#delete with force = true`() {
+		// given
+		val toDelete = listOf(POD2)
+		// when
+		context.delete(toDelete, true)
+		// then
+		verify(namespacedPodsOperator).delete(toDelete, true)
 	}
 
 	@Test
@@ -345,9 +354,9 @@ class KubernetesContextTest {
 		// given
 		val toDelete = listOf(resource<HasMetadata>("lord sith", "ns1", "uid", "v1"))
 		// when
-		context.delete(toDelete)
+		context.delete(toDelete, false)
 		// then
-		verify(namespacedPodsOperator, never()).delete(toDelete)
+		verify(namespacedPodsOperator, never()).delete(any(), any())
 	}
 
 	@Test
@@ -355,9 +364,9 @@ class KubernetesContextTest {
 		// given
 		val toDelete = listOf(POD2, POD2)
 		// when
-		context.delete(toDelete)
+		context.delete(toDelete, false)
 		// then
-		verify(namespacedPodsOperator, times(1)).delete(eq(listOf(POD2)))
+		verify(namespacedPodsOperator, times(1)).delete(eq(listOf(POD2)), eq(false))
 	}
 
 	@Test
@@ -365,20 +374,20 @@ class KubernetesContextTest {
 		// given
 		val toDelete = listOf(POD2, NAMESPACE2)
 		// when
-		context.delete(toDelete)
+		context.delete(toDelete, false)
 		// then
-		verify(namespacedPodsOperator, times(1)).delete(eq(listOf(POD2)))
-		verify(namespacesOperator, times(1)).delete(eq(listOf(NAMESPACE2)))
+		verify(namespacedPodsOperator, times(1)).delete(eq(listOf(POD2)), eq(false))
+		verify(namespacesOperator, times(1)).delete(eq(listOf(NAMESPACE2)), eq(false))
 	}
 
 	@Test
 	fun `#delete should fire if resource was deleted`() {
 		// given
 		val toDelete = listOf(POD2)
-		whenever(allPodsOperator.delete(any()))
+		whenever(allPodsOperator.delete(any(), any()))
 				.thenReturn(true)
 		// when
-		context.delete(toDelete)
+		context.delete(toDelete, false)
 		// then
 		verify(modelChange).fireModified(toDelete)
 	}
@@ -388,7 +397,7 @@ class KubernetesContextTest {
 		// given
 		val toDelete = listOf(POD2, POD3)
 		// when
-		context.delete(toDelete)
+		context.delete(toDelete, false)
 		// then
 		verify(POD2.metadata, atLeastOnce()).deletionTimestamp = any()
 		verify(POD3.metadata, atLeastOnce()).deletionTimestamp = any()
@@ -398,10 +407,10 @@ class KubernetesContextTest {
 	fun `#delete should throw if resource was NOT deleted`() {
 		// given
 		val toDelete = listOf(POD2)
-		whenever(namespacedPodsOperator.delete(any()))
+		whenever(namespacedPodsOperator.delete(any(), any()))
 			.thenReturn(false)
 		// when
-		context.delete(toDelete)
+		context.delete(toDelete, false)
 		// then
 		// expect exception
 	}
@@ -410,11 +419,11 @@ class KubernetesContextTest {
 	fun `#delete should throw for operator that failed, not successful ones`() {
 		// given
 		val toDelete = listOf(POD2, NAMESPACE2)
-		whenever(namespacedPodsOperator.delete(any()))
+		whenever(namespacedPodsOperator.delete(any(), any()))
 			.thenReturn(false)
 		// when
 		val ex = try {
-			context.delete(toDelete)
+			context.delete(toDelete, false)
 			null
 		} catch (e: MultiResourceException) {
 			e
@@ -429,11 +438,11 @@ class KubernetesContextTest {
 	fun `#delete should NOT fire if resource was NOT deleted`() {
 		// given
 		val toDelete = listOf(POD2)
-		whenever(namespacedPodsOperator.delete(any()))
+		whenever(namespacedPodsOperator.delete(any(), any()))
 			.thenReturn(false)
 		// when
 		try {
-			context.delete(toDelete)
+			context.delete(toDelete, false)
 		} catch (e: MultiResourceException) {
 			// ignore expected exception
 		}
@@ -916,6 +925,24 @@ class KubernetesContextTest {
 		verify(client.get(), never()).close()
 	}
 
+	@Test
+	fun `#close should close watch`() {
+		// given
+		// when
+		context.close()
+		// then
+		verify(context.watch).close()
+	}
+
+	@Test
+	fun `#close should close dashboard`() {
+		// given
+		// when
+		context.close()
+		// then
+		verify(context.dashboard).close()
+	}
+
 	private fun givenCustomResourceOperatorInContext(
 		definition: CustomResourceDefinition,
 		definitionOperator: IResourceOperator<CustomResourceDefinition>,
@@ -956,6 +983,8 @@ class KubernetesContextTest {
         public override var watch: ResourceWatch<ResourceKind<out HasMetadata>>,
         override val notification: Notification)
 		: KubernetesContext(context, observable, client) {
+
+		public override val dashboard: IDashboard = mock()
 
 		public override val namespacedOperators
 				: MutableMap<ResourceKind<out HasMetadata>, INamespacedResourceOperator<out HasMetadata, KubernetesClient>>

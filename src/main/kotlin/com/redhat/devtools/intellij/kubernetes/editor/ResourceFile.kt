@@ -20,21 +20,21 @@ import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.util.io.FileUtilRt
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.util.ui.EdtInvocationManager
+import com.intellij.util.ui.EDT
 import com.redhat.devtools.intellij.common.editor.AllowNonProjectEditing
 import com.redhat.devtools.intellij.common.utils.UIHelper
 import com.redhat.devtools.intellij.kubernetes.model.Notification
 import com.redhat.devtools.intellij.kubernetes.model.util.trimWithEllipsis
 import io.fabric8.kubernetes.api.model.HasMetadata
 import io.fabric8.kubernetes.client.utils.Serialization
+import org.apache.commons.io.FileUtils
+import org.jetbrains.yaml.YAMLFileType
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.function.Supplier
-import org.apache.commons.io.FileUtils
-import org.jetbrains.yaml.YAMLFileType
 
 /**
  * Helper that offers operations on the [VirtualFile] for a [ResourceEditor]
@@ -135,14 +135,14 @@ open class ResourceFile protected constructor(
          * When invoking synchronous refresh from a thread other than the event dispatch thread,
          * the current thread must NOT be in a read action, otherwise a deadlock may occur
          */
-        if (EdtInvocationManager.getInstance().isEventDispatchThread) {
+        if (EDT.isCurrentThreadEdt()) {
             executeReadAction {
                 virtualFile.refresh(false, false)
             }
         } else {
             virtualFile.refresh(false, false)
         }
-        enableNonProjectFileEditing()
+        enableEditingNonProjectFile()
         return virtualFile
     }
 
@@ -177,7 +177,7 @@ open class ResourceFile protected constructor(
         return Factory.isTemporary(virtualFile)
     }
 
-    open fun enableNonProjectFileEditing() {
+    open fun enableEditingNonProjectFile() {
         virtualFile.putUserData(AllowNonProjectEditing.ALLOW_NON_PROJECT_EDITING, true)
     }
 

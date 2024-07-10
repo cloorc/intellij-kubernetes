@@ -11,7 +11,6 @@
 package com.redhat.devtools.intellij.kubernetes.editor
 
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
@@ -24,7 +23,6 @@ import com.redhat.devtools.intellij.kubernetes.editor.util.getKubernetesResource
 import com.redhat.devtools.intellij.kubernetes.editor.util.hasKubernetesResource
 import com.redhat.devtools.intellij.kubernetes.model.IResourceModel
 import com.redhat.devtools.intellij.kubernetes.model.util.ResourceException
-import com.redhat.devtools.intellij.kubernetes.model.util.isSameResource
 import com.redhat.devtools.intellij.kubernetes.telemetry.TelemetryService
 import com.redhat.devtools.intellij.telemetry.core.service.TelemetryMessageBuilder
 import io.fabric8.kubernetes.api.model.HasMetadata
@@ -42,10 +40,6 @@ open class ResourceEditorFactory protected constructor(
     /* for mocking purposes */
     private val isTemporary: (file: VirtualFile?) -> Boolean = ResourceFile.Factory::isTemporary,
     /* for mocking purposes */
-    private val getDocument: (editor: FileEditor) -> Document? = { editor ->
-        com.redhat.devtools.intellij.kubernetes.editor.util.getDocument(editor)
-    },
-    /* for mocking purposes */
     private val hasKubernetesResource: (FileEditor, Project) -> Boolean = { editor, project ->
         hasKubernetesResource(editor.file, project)
     },
@@ -53,13 +47,7 @@ open class ResourceEditorFactory protected constructor(
     private val createResourceEditor: (FileEditor, Project) -> ResourceEditor =
         { editor, project -> ResourceEditor(editor, IResourceModel.getInstance(), project) },
     /* for mocking purposes */
-    private val reportTelemetry: (FileEditor, Project, TelemetryMessageBuilder.ActionMessage) -> Unit = { editor, project, telemetry ->
-        val resourceInfo = getKubernetesResourceInfo(editor.file, project)
-        TelemetryService.sendTelemetry(resourceInfo, telemetry)
-    },
-    /* for mocking purposes */
-    private val getProjectManager: () -> ProjectManager = {  ProjectManager.getInstance() }
-
+    private val getProjectManager: () -> ProjectManager = {  ProjectManager.getInstance() },
 ) {
 
     companion object {
@@ -99,11 +87,12 @@ open class ResourceEditorFactory protected constructor(
 
     private fun getExisting(resource: HasMetadata, project: Project): ResourceEditor? {
         return getFileEditorManager.invoke(project).allEditors
-            .mapNotNull { editor -> getExisting(editor) }
+            .mapNotNull { editor ->
+                getExisting(editor) }
             .firstOrNull { resourceEditor ->
                 // get editor for a temporary file thus only editors for temporary files are candidates
                 isTemporary.invoke(resourceEditor.editor.file)
-                        && resource.isSameResource(resourceEditor.editorResource.get())
+                        && resourceEditor.isEditing(resource)
             }
     }
 
@@ -115,8 +104,7 @@ open class ResourceEditorFactory protected constructor(
      */
     fun getExistingOrCreate(editor: FileEditor?, project: Project?): ResourceEditor? {
         if (editor == null
-            || project == null
-        ) {
+            || project == null) {
             return null
         }
 
@@ -129,9 +117,9 @@ open class ResourceEditorFactory protected constructor(
         ) {
             return null
         }
-        val telemetry = TelemetryService.instance.action(TelemetryService.NAME_PREFIX_EDITOR + "open")
-        return try {
-            runAsync { reportTelemetry.invoke(editor, project, telemetry) }
+        val telemetry = getTelemetryMessageBuilder().action(TelemetryService.NAME_PREFIX_EDITOR + "open")
+      return try {
+            runAsync { TelemetryService.sendTelemetry(getKubernetesResourceInfo(editor.file, project), telemetry) }
             val resourceEditor = createResourceEditor.invoke(editor, project)
             resourceEditor.createToolbar()
             getProjectManager.invoke().addProjectManagerListener(project, onProjectClosed(resourceEditor))
@@ -165,5 +153,10 @@ open class ResourceEditorFactory protected constructor(
         } else {
             ApplicationManager.getApplication().invokeLater(runnable)
         }
+    }
+
+    /* for testing purposes */
+    protected open fun getTelemetryMessageBuilder(): TelemetryMessageBuilder {
+      return TelemetryService.instance;
     }
 }

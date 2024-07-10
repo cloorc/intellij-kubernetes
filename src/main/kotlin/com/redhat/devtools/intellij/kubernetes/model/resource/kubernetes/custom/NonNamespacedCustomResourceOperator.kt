@@ -28,31 +28,41 @@ class NonNamespacedCustomResourceOperator(
 ) : NonNamespacedResourceOperator<GenericKubernetesResource, KubernetesClient>(client) {
 
     override fun loadAllResources(): List<GenericKubernetesResource> {
-        return getOperation()?.list()?.items ?: emptyList()
-    }
-
-    override fun watch(resource: HasMetadata, watcher: Watcher<in GenericKubernetesResource>): Watch? {
-        @Suppress("UNCHECKED_CAST")
-        val typedWatcher = watcher as? Watcher<GenericKubernetesResource> ?: return null
-        return getOperation()?.withName(resource.metadata.name)?.watch(typedWatcher)
+        return getOperation()
+            ?.list()
+            ?.items
+            ?: emptyList()
     }
 
     override fun watchAll(watcher: Watcher<in GenericKubernetesResource>): Watch? {
         @Suppress("UNCHECKED_CAST")
         val typedWatcher = watcher as? Watcher<GenericKubernetesResource> ?: return null
-        return getOperation()?.watch(typedWatcher)
+        return getOperation()
+            ?.watch(typedWatcher)
     }
 
-    override fun delete(resources: List<HasMetadata>): Boolean {
+    override fun watch(resource: HasMetadata, watcher: Watcher<in GenericKubernetesResource>): Watch? {
+        @Suppress("UNCHECKED_CAST")
+        val typedWatcher = watcher as? Watcher<GenericKubernetesResource> ?: return null
+        return getOperation()
+            ?.withName(resource.metadata.name)
+            ?.watch(typedWatcher)
+    }
+
+    override fun delete(resources: List<HasMetadata>, force: Boolean): Boolean {
         @Suppress("UNCHECKED_CAST")
         val toDelete = resources as? List<GenericKubernetesResource> ?: return false
         return toDelete.stream()
-            .map { delete(it.metadata.name) }
+            .map { delete(it.metadata.name, force) }
             .reduce(false ) { thisDelete, thatDelete -> thisDelete || thatDelete }
     }
 
-    private fun delete(name: String): Boolean {
-        getOperation()?.withName(name)?.delete()
+    private fun delete(name: String, force: Boolean): Boolean {
+        val operation = getOperation()
+            ?.withName(name) ?: return false
+      	operation
+          .immediate(force)
+          ?.delete()
         return true
     }
 
@@ -60,7 +70,12 @@ class NonNamespacedCustomResourceOperator(
         val toReplace = resource as? GenericKubernetesResource ?: return null
 
         return runWithoutServerSetProperties(toReplace) {
-            getOperation()?.withName(resource.metadata.name)?.createOrReplace(resource)
+            getOperation()
+                ?.resource(resource)
+                /**
+                 * See: https://github.com/fabric8io/kubernetes-client/blob/main/doc/FAQ.md#alternatives-to-createOrReplace-and-replace
+                 */
+                ?.patch()
         }
     }
 

@@ -11,9 +11,7 @@
 package com.redhat.devtools.intellij.kubernetes.model
 
 import com.intellij.openapi.diagnostic.logger
-import com.redhat.devtools.intellij.kubernetes.console.TerminalTab
 import com.redhat.devtools.intellij.kubernetes.model.client.ClientAdapter
-import com.redhat.devtools.intellij.kubernetes.model.context.ActiveContext
 import com.redhat.devtools.intellij.kubernetes.model.resource.IWatchableExec
 import com.redhat.devtools.intellij.kubernetes.model.resource.IWatchableLog
 import com.redhat.devtools.intellij.kubernetes.model.resource.IWatchableProcess
@@ -35,7 +33,10 @@ import java.io.IOException
 import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
 
-open class ProcessWatches(private val clientFactory: (String?, String?) -> ClientAdapter<out KubernetesClient> = ClientAdapter.Factory::create) {
+open class ProcessWatches(
+    private val clientFactory: (String?, String?) -> ClientAdapter<out KubernetesClient>
+    = { namespace: String?, context: String? -> ClientAdapter.Factory.create(namespace, context) }
+) {
 
     @Suppress("UNCHECKED_CAST")
     protected open val operators: Map<ResourceKind<out HasMetadata>, OperatorSpecs> = mapOf(
@@ -60,7 +61,7 @@ open class ProcessWatches(private val clientFactory: (String?, String?) -> Clien
     }
 
     fun watchLog(container: Container, resource: HasMetadata, out: OutputStream): LogWatch? {
-        logger<ActiveContext<*, *>>().debug("Watching log of container in ${toMessage(resource, -1)}")
+        logger<ProcessWatches>().debug("Watching log of container in ${toMessage(resource, -1)}")
         val operator = createOperator<IWatchableLog<HasMetadata>>(resource) ?: return null
         return try {
             val watch = operator.watchLog(container, resource, out)
@@ -84,7 +85,7 @@ open class ProcessWatches(private val clientFactory: (String?, String?) -> Clien
     }
 
     fun watchExec(container: Container, resource: HasMetadata, listener: ExecListener): ExecWatch? {
-        logger<ActiveContext<*, *>>().debug("Watching exec of container \"${container.name}\" in ${toMessage(resource, -1)}.")
+        logger<ProcessWatches>().debug("Watching exec of container \"${container.name}\" in ${toMessage(resource, -1)}.")
         val operator = createOperator<IWatchableExec<HasMetadata>>(resource)
         return try {
             val watch = operator?.watchExec(container, resource, listener)
@@ -111,7 +112,7 @@ open class ProcessWatches(private val clientFactory: (String?, String?) -> Clien
             operator?.close()
             operator != null
         } catch (e: Exception) {
-            logger<TerminalTab>().warn(
+            logger<ProcessWatches>().warn(
                 "Could not close exec watch $watch",
                 e.cause)
             false

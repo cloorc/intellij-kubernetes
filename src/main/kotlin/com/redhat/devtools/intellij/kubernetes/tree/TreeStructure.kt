@@ -20,6 +20,7 @@ import com.intellij.openapi.editor.colors.CodeInsightColors
 import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.IconLoader
+import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.tree.LeafState
 import com.redhat.devtools.intellij.kubernetes.model.IResourceModel
 import com.redhat.devtools.intellij.kubernetes.model.context.IActiveContext
@@ -28,6 +29,7 @@ import com.redhat.devtools.intellij.kubernetes.model.resource.ResourceKind
 import com.redhat.devtools.intellij.kubernetes.model.util.hasDeletionTimestamp
 import com.redhat.devtools.intellij.kubernetes.model.util.isSameResource
 import com.redhat.devtools.intellij.kubernetes.model.util.isWillBeDeleted
+import com.redhat.devtools.intellij.kubernetes.model.util.toMessage
 import io.fabric8.kubernetes.api.model.HasMetadata
 import javax.swing.Icon
 
@@ -42,7 +44,7 @@ open class TreeStructure(
         private val project: Project,
         private val model: IResourceModel,
         private val extensionPoint: ExtensionPointName<ITreeStructureContributionFactory> =
-                ExtensionPointName.create("com.redhat.devtools.intellij.kubernetes.structureContribution"))
+                ExtensionPointName("com.redhat.devtools.intellij.kubernetes.structureContribution"))
     : AbstractTreeStructure(), MultiParentTreeStructure {
 
     private val contributions by lazy {
@@ -164,8 +166,8 @@ open class TreeStructure(
         model,
         project
     ) {
-        override fun getLabel(element: C): String {
-            return if (element.context.context == null) {
+        override fun getLabel(element: C?): String {
+            return if (element?.context?.name == null) {
                 "<unknown context>"
             } else {
                 element.context.name
@@ -199,7 +201,7 @@ open class TreeStructure(
         }
     }
 
-    private class FolderDescriptor(
+    open class FolderDescriptor(
         element: Folder,
         parent: NodeDescriptor<*>?,
         model: IResourceModel,
@@ -216,16 +218,12 @@ open class TreeStructure(
             return this.element?.kind == element
         }
 
-        override fun setElement(element: Any): Boolean {
-            return when(element) {
-                is ResourceKind<*> -> {
-                    val current = getElement() ?: return false
-                    super.setElement(Folder(current.label, element))
-                }
-                is Folder ->
-                    super.setElement(element)
-                else ->
-                    false
+        override fun setElement(newElement: Any): Boolean {
+            return if (newElement is ResourceKind<*>) {
+                val current = element ?: return false
+                super.setElement(Folder(current, newElement))
+            } else {
+                false
             }
         }
 
@@ -233,8 +231,8 @@ open class TreeStructure(
             model.invalidate(element?.kind)
         }
 
-        override fun getLabel(element: Folder): String {
-            return element.label
+        override fun getLabel(element: Folder?): String {
+            return element?.label ?: "<unknown folder>"
         }
     }
 
@@ -250,11 +248,15 @@ open class TreeStructure(
         model,
         project
     ) {
-        override fun getLabel(element: java.lang.Exception): String {
-            return "Error: ${element.message ?: "unspecified"}"
+        override fun getLabel(element: java.lang.Exception?): String {
+            return getMessage(element)
         }
 
-        override fun getIcon(element: java.lang.Exception): Icon? {
+        private fun getMessage(e: Exception?): String {
+            return toMessage(e)
+        }
+
+        override fun getIcon(element: java.lang.Exception): Icon {
             return AllIcons.General.BalloonError
         }
     }
@@ -267,8 +269,8 @@ open class TreeStructure(
         project: Project
     ) : Descriptor<T>(element, childrenKind, parent, model, project) {
 
-        override fun getLabel(element: T): String {
-            return element.metadata.name
+        override fun getLabel(element: T?): String {
+            return element?.metadata?.name ?: "<unknown resource>"
         }
 
         override fun update(presentation: PresentationData) {
@@ -304,11 +306,19 @@ open class TreeStructure(
 
         override fun update(presentation: PresentationData) {
             updateLabel(getLabel(element), presentation)
+            updateSubLabel(getSubLabel(element), presentation)
             updateIcon(getIcon(element), presentation)
         }
 
         private fun updateLabel(label: String?, presentation: PresentationData) {
-            presentation.presentableText = label
+            presentation.addText(label, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+        }
+
+        protected open fun updateSubLabel(subLabel: String?, presentation: PresentationData) {
+            if (subLabel.isNullOrEmpty()) {
+                return
+            }
+            presentation.addText(" $subLabel", SimpleTextAttributes.GRAYED_ATTRIBUTES)
         }
 
         open fun hasElement(element: Any?): Boolean {
@@ -330,8 +340,12 @@ open class TreeStructure(
             model.invalidate(element)
         }
 
-        protected open fun getLabel(element: T): String? {
-            return element?.toString()
+        protected open fun getLabel(element: T?): String {
+            return element?.toString() ?: "<unknown element>"
+        }
+
+        protected open fun getSubLabel(element: T): String? {
+            return null
         }
 
         protected open fun getIcon(element: T): Icon? {
@@ -353,9 +367,15 @@ open class TreeStructure(
             val kind = childrenKind ?: return
             model.stopWatch(kind)
         }
+
+        override fun toString(): String {
+            return getLabel(element)
+        }
     }
 
-    data class Folder(val label: String, val kind: ResourceKind<out HasMetadata>?)
+    open class Folder(val label: String, val kind: ResourceKind<out HasMetadata>?) {
+        constructor(folder: Folder, kind: ResourceKind<out HasMetadata>?) : this(folder.label, kind)
+    }
 }
 
 

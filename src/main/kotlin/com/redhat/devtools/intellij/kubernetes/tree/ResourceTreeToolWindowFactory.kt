@@ -13,17 +13,19 @@ package com.redhat.devtools.intellij.kubernetes.tree
 import com.intellij.ide.util.treeView.AbstractTreeStructure
 import com.intellij.ide.util.treeView.NodeRenderer
 import com.intellij.openapi.actionSystem.ActionPlaces
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.ui.PopupHandler
 import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.content.Content
-import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.tree.AsyncTreeModel
 import com.intellij.ui.tree.StructureTreeModel
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.concurrency.Invoker
 import com.redhat.devtools.intellij.common.compat.PopupHandlerAdapter
+import com.redhat.devtools.intellij.common.utils.IDEAContentFactory
 import com.redhat.devtools.intellij.kubernetes.actions.getElement
 import com.redhat.devtools.intellij.kubernetes.editor.ResourceEditorFactory
 import com.redhat.devtools.intellij.kubernetes.model.IResourceModel
@@ -37,7 +39,7 @@ import javax.swing.JTree
 import javax.swing.tree.MutableTreeNode
 
 
-class ResourceTreeToolWindowFactory: ToolWindowFactory {
+class ResourceTreeToolWindowFactory: ToolWindowFactory, DumbAware {
 
     companion object {
         const val ID = "Kubernetes"
@@ -45,12 +47,12 @@ class ResourceTreeToolWindowFactory: ToolWindowFactory {
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val panel = ScrollPaneFactory.createScrollPane()
-        val contentFactory = ContentFactory.SERVICE.getInstance()
+        val contentFactory = IDEAContentFactory.getInstance()
         val content = contentFactory.createContent(panel, "", false)
         toolWindow.contentManager.addContent(content)
 
         val tree = createTree(content, project)
-        PopupHandlerAdapter.install(tree, "com.redhat.devtools.intellij.kubernetes.tree", ActionPlaces.UNKNOWN)
+        PopupHandler.installPopupMenu(tree, "com.redhat.devtools.intellij.kubernetes.tree", ActionPlaces.TOOLWINDOW_POPUP)
         panel.setViewportView(tree)
     }
 

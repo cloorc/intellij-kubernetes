@@ -24,6 +24,7 @@ import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.Namespa
 import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.NodesOperator
 import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.PersistentVolumeClaimsOperator
 import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.PersistentVolumesOperator
+import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.ReplicaSetsOperator
 import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.SecretsOperator
 import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.ServicesOperator
 import com.redhat.devtools.intellij.kubernetes.model.resource.kubernetes.StatefulSetsOperator
@@ -35,6 +36,7 @@ import com.redhat.devtools.intellij.kubernetes.model.resource.openshift.Deployme
 import com.redhat.devtools.intellij.kubernetes.model.resource.openshift.ImageStreamsOperator
 import com.redhat.devtools.intellij.kubernetes.model.resource.openshift.ProjectsOperator
 import com.redhat.devtools.intellij.kubernetes.model.resource.openshift.ReplicationControllersOperator
+import com.redhat.devtools.intellij.kubernetes.model.resource.openshift.RoutesOperator
 import io.fabric8.kubernetes.api.model.HasMetadata
 import io.fabric8.kubernetes.client.KubernetesClient
 import io.fabric8.openshift.client.OpenShiftClient
@@ -46,6 +48,8 @@ object OperatorFactory {
             NamespacesOperator.KIND to ::NamespacesOperator,
             NodesOperator.KIND to ::NodesOperator,
             AllPodsOperator.KIND to ::AllPodsOperator,
+            ReplicaSetsOperator.KIND to ::ReplicaSetsOperator,
+            ReplicationControllersOperator.KIND to ::ReplicationControllersOperator,
             DeploymentsOperator.KIND to ::DeploymentsOperator,
             StatefulSetsOperator.KIND to ::StatefulSetsOperator,
             DaemonSetsOperator.KIND to ::DaemonSetsOperator,
@@ -57,7 +61,7 @@ object OperatorFactory {
             DeploymentConfigsOperator.KIND to ::DeploymentConfigsOperator,
             BuildsOperator.KIND to ::BuildsOperator,
             BuildConfigsOperator.KIND to ::BuildConfigsOperator,
-            ReplicationControllersOperator.KIND to ::ReplicationControllersOperator,
+            RoutesOperator.KIND to ::RoutesOperator,
             ServicesOperator.KIND to ::ServicesOperator,
             EndpointsOperator.KIND to ::EndpointsOperator,
             PersistentVolumesOperator.KIND to ::PersistentVolumesOperator,
@@ -74,6 +78,8 @@ object OperatorFactory {
             NamespacesOperator.KIND to ::NamespacesOperator,
             NodesOperator.KIND to ::NodesOperator,
             AllPodsOperator.KIND to ::AllPodsOperator,
+            ReplicaSetsOperator.KIND to ::ReplicaSetsOperator,
+            ReplicationControllersOperator.KIND to ::ReplicationControllersOperator,
             DeploymentsOperator.KIND to ::DeploymentsOperator,
             StatefulSetsOperator.KIND to ::StatefulSetsOperator,
             DaemonSetsOperator.KIND to ::DaemonSetsOperator,

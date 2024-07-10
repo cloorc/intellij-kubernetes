@@ -1,6 +1,6 @@
 [![JetBrains Marketplace](https://img.shields.io/jetbrains/plugin/v/15921-kubernetes-by-red-hat?label=Jet%20Brains%20Marketplace&style=for-the-badge)](https://plugins.jetbrains.com/plugin/15921-kubernetes-by-red-hat)
 [![Downloads](https://img.shields.io/jetbrains/plugin/d/15921-kubernetes-by-red-hat?logo=jetbrains&style=for-the-badge)](https://plugins.jetbrains.com/plugin/15921-kubernetes-by-red-hat)
-[![Build Status](https://img.shields.io/github/workflow/status/redhat-developer/intellij-kubernetes/Java%20CI%20with%20Gradle?logo=github&style=for-the-badge)](https://github.com/redhat-developer/intellij-kubernetes/actions/workflows/ci.yml?query=workflow%3ACI)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/redhat-developer/intellij-kubernetes/ci.yml?logo=github&style=for-the-badge)](https://github.com/redhat-developer/intellij-kubernetes/actions/workflows/ci.yml?query=workflow%3ACI)
 [![License](https://img.shields.io/github/license/redhat-developer/intellij-kubernetes?style=for-the-badge)](https://github.com/redhat-developer/intellij-kubernetes/blob/main/LICENSE)
 
 # Kubernetes
@@ -18,13 +18,16 @@ It is available for install from the [JetBrains Marketplace](https://plugins.jet
  - Edit Kubernetes resource manifests and apply them to your cluster
  - View Kubernetes and OpenShift clusters in an explorer tree view
  - Tree View supports dynamic update of K8s resources
- - Allow Push and Pull Feature to keep the editor in sync with the Kubernetes resource
- - Support Creation and Deletion of new Kubernetes resources on Cluster
+ - Push and Pull Feature to keep the editor in sync with the Kubernetes resource
+ - Allows users to Push multiple resources in an editor to create several resources at once.
+ - Support Creation and Deletion of Kubernetes resources on Cluster
  - Navigate into Kubernetes workloads, services, pods and nodes
  - Switching contexts and namespaces within Kubernetes
  - Follow logs from the connected cluster resource
  - Open a Terminal Shell to a Running Container in the connected cluster
+ - Open the Dashboard for the connected cluster (works on any Hybrid cloud cluster)
  - Support [init containers](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/) for logs and terminals.
+ - Scale the replicated pods for deployments, deployment configs, replica/stateful sets or replication controllers
 
 ## Features
 
@@ -79,7 +82,7 @@ There is a `Push` button available in the editor toolbar to make the action more
 ![editor toolbar push](images/editor-toolbar-push.png)
 
 Alternatively the editor notifies you whenever you may push your content to the cluster.
-Clicking the "Push" link in the editor notification saves your editor to the cluster.
+Clicking the `Push` link in the editor notification saves your file changes on to the cluster.
 
 ![editor push](images/editor-push.png)
 
@@ -88,16 +91,10 @@ The new resource will then appear in the resource tree that's displayed in our t
 
 #### Pull (Load) from Cluster
 
-The editor also notifies you if your resource has changed on the cluster.
-The notification informs you of a newer version that is available on the cluster and allows you to `Pull` it into your editor.
+You can `Pull` the resource from the cluster into the local file opened in the editor. 
+Clicking on the `Pull` icon in the toolbar replaces the content of your local file in the editor with the version that exists on the cluster.
 
-![editor pulled](images/editor-pulled.png)
-
-Competing changes in your editor and on the cluster get notified with 2 options:
-You can either overwrite the cluster by pushing the editor to the cluster.
-Alternatively you can replace your local version with the one on the cluster and pull it.
-
-![editor pull or push](images/editor-pull-push.png)
+![editor pull](images/editor-toolbar-pull.png)
 
 #### Diff
 
@@ -110,9 +107,15 @@ The very same dialog may also be opened with a link that's present in the notifi
 
 ![editor diff](images/editor-diff.png)
 
-
 #### Delete Resources
 You may delete any resource that is listed in the resource tree by choosing "Delete" in the context menu.
+
+#### Scale Replicated Pods
+You may scale a deployment, deployment config, replica/stateful set or a replication controller.
+A context action allows you to set the replicas for these kind of resources in the resource tree.
+Furthermore, this same action is accessible for pods that are replicated by either of those resource types.
+
+![set replicas](images/set-replicas.png)
 
 #### Follow Logs of Running Containers
 

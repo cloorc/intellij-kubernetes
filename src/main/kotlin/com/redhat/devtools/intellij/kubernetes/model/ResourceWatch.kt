@@ -36,7 +36,7 @@ open class ResourceWatch<T>(
     }
 
     protected open val watches: ConcurrentHashMap<T, Watch?> = ConcurrentHashMap()
-    private val executor: ExecutorService = Executors.newWorkStealingPool(10)
+    private val executor: ExecutorService = Executors.newWorkStealingPool(20)
     private val thread = executor.submit(watchOperationsRunner)
 
     open fun watchAll(
@@ -111,9 +111,10 @@ open class ResourceWatch<T>(
             logger<ResourceWatch<*>>().debug("Closing watch for $type resources.")
             watch.close()
             true
-        } catch (e: KubernetesClientException) {
-            logger<ResourceWatch<*>>().warn("Failed to close watch for $type resources.", e)
-            false
+        } catch (e: Exception) {
+            logger<ResourceWatch<*>>().warn("Error when closing watch for $type resources.", e)
+            // do as if close() worked so that watch gets removed
+            true
         }
     }
 
@@ -137,12 +138,12 @@ open class ResourceWatch<T>(
     ) : Runnable {
         override fun run() {
             try {
-                logger<ResourceWatcher>().debug("Watching $key resource(s).")
+                logger<ResourceWatch<*>>().debug("Watching $key resource(s).")
                 val watch: Watch? = watchOperation.invoke(ResourceWatcher(addOperation, removeOperation, replaceOperation))
                 saveWatch(watch)
             } catch (e: Exception) {
                 watches.remove(key) // remove placeholder
-                logger<ResourceWatcher>().warn("Could not watch resource(s) $key.", e)
+                logger<ResourceWatch<*>>().warn("Could not watch resource(s) $key.", e)
             }
         }
 
@@ -150,7 +151,7 @@ open class ResourceWatch<T>(
             if (watch == null) {
                 watches.remove(key) // remove placeholder
             } else {
-                logger<ResourceWatcher>().debug("Created watch for $key resources.")
+                logger<ResourceWatch<*>>().debug("Created watch for $key resources.")
                 watches[key] = watch // replace placeholder
             }
         }
@@ -162,7 +163,7 @@ open class ResourceWatch<T>(
             private val replaceOperation: (HasMetadata) -> Unit
     ) : Watcher<HasMetadata> {
         override fun eventReceived(action: Watcher.Action?, resource: HasMetadata) {
-            logger<ResourceWatcher>().debug(
+            logger<ResourceWatch<*>>().debug(
                     """Received $action event for ${resource.kind} '${resource.metadata.name}'
                             |"${if (resource.metadata.namespace != null) "in namespace ${resource.metadata.namespace}" else ""}.""")
             when (action) {
@@ -177,7 +178,7 @@ open class ResourceWatch<T>(
         }
 
         override fun onClose(e: WatcherException?) {
-            logger<ResourceWatcher>().debug("watcher closed.", e)
+            logger<ResourceWatch<*>>().debug("watcher closed.", e)
         }
     }
 

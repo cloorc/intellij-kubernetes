@@ -14,6 +14,11 @@ import com.intellij.openapi.diagnostic.logger
 import com.redhat.devtools.intellij.kubernetes.model.util.isSameResource
 import io.fabric8.kubernetes.api.model.HasMetadata
 import io.fabric8.kubernetes.client.Client
+import io.fabric8.kubernetes.client.KubernetesClient
+import io.fabric8.kubernetes.client.PropagationPolicyConfigurable
+import io.fabric8.kubernetes.client.dsl.Deletable
+import io.fabric8.kubernetes.client.dsl.ListVisitFromServerGetDeleteRecreateWaitApplicable
+import io.fabric8.kubernetes.client.dsl.Resource
 
 abstract class AbstractResourceOperator<R : HasMetadata, C : Client>(protected val client: C) : IResourceOperator<R> {
 
@@ -76,11 +81,38 @@ abstract class AbstractResourceOperator<R : HasMetadata, C : Client>(protected v
         return true
     }
 
+    override fun delete(resources: List<HasMetadata>, force: Boolean): Boolean {
+        @Suppress("UNCHECKED_CAST")
+        val toDelete = resources as? List<R> ?: return false
+        val resourceList = client.adapt(KubernetesClient::class.java)
+            .resourceList(toDelete) ?: return false
+        val status = resourceList
+            .immediate(force)
+            .delete()
+        return status.size == toDelete.size
+    }
+
     private fun isCorrectKind(resource: HasMetadata): Boolean {
         return kind.clazz.isAssignableFrom(resource::class.java)
     }
 
-    override fun close() {
+    private fun <T: HasMetadata> ListVisitFromServerGetDeleteRecreateWaitApplicable<T>.immediate(force: Boolean): PropagationPolicyConfigurable<out Deletable> {
+        return if (force) {
+            withGracePeriod(0)
+        } else {
+            this
+        }
+    }
+
+    protected fun <T: HasMetadata> Resource<T>?.immediate(force: Boolean): PropagationPolicyConfigurable<out Deletable>? {
+        return if (force) {
+            this?.withGracePeriod(0)
+        } else {
+            this
+        }
+    }
+
+  override fun close() {
         client.close()
     }
 }

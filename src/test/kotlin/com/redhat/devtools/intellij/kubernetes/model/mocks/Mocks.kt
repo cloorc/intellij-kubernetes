@@ -38,6 +38,7 @@ import io.fabric8.kubernetes.client.Watch
 import io.fabric8.kubernetes.client.Watcher
 import io.fabric8.kubernetes.client.dsl.ExecWatch
 import io.fabric8.kubernetes.client.dsl.LogWatch
+import java.util.concurrent.CompletableFuture
 import org.mockito.Mockito
 
 object Mocks {
@@ -48,10 +49,12 @@ object Mocks {
                 .whenever(this).invoke(anyOrNull(), anyOrNull())
         }
 
-    fun clientAdapter(clientConfig: ClientConfig): ClientAdapter<KubernetesClient> {
+    fun clientAdapter(clientConfig: ClientConfig?, client: KubernetesClient? = null): ClientAdapter<KubernetesClient> {
         return mock<ClientAdapter<KubernetesClient>>().apply {
             doReturn(clientConfig)
                 .whenever(this).config
+            doReturn(client)
+                .whenever(this).get()
         }
     }
 
@@ -160,7 +163,7 @@ object Mocks {
             .whenever(mock).watchAll(any())
 
         doReturn(deleteSuccess)
-            .whenever(mock).delete(any())
+            .whenever(mock).delete(any(), any())
         doReturn(getReturnValue)
             .whenever(mock).get(any())
     }
@@ -180,7 +183,7 @@ object Mocks {
             on { watchAll(any()) } doAnswer { invocation ->
                 watchOperation.invoke(invocation.getArgument(0))
             }
-            on { delete(any()) } doReturn deleteSuccess
+            on { delete(any(), any()) } doReturn deleteSuccess
         }
     }
 
@@ -208,6 +211,7 @@ object Mocks {
         allContexts: List<NamedContext>,
         configuration: io.fabric8.kubernetes.client.Config = mock()
     ): ClientConfig {
+        val saveFuture: CompletableFuture<Boolean> = mock()
         return mock {
             on { this.currentContext } doReturn currentContext
             on { isCurrent(any()) } doAnswer { invocation ->
@@ -215,6 +219,7 @@ object Mocks {
             }
             on { this.allContexts } doReturn allContexts
             on { this.configuration } doReturn configuration
+            on { this.save() } doReturn saveFuture
         }
     }
 
